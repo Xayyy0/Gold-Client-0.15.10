@@ -10,6 +10,9 @@ import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.LinearLayout
 import kotlin.math.abs
 
@@ -24,63 +27,83 @@ class IconDrawable(private val kind: Int, color: Int, private val sizePx: Int) :
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; this.color = color
     }
 
+    private val f = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; this.color = color }
+
     override fun draw(c: Canvas) {
         val b = bounds
         val s = minOf(b.width(), b.height()) / 24f
         c.save()
         c.translate(b.left + (b.width() - 24f * s) / 2f, b.top + (b.height() - 24f * s) / 2f)
         c.scale(s, s)
-        p.strokeWidth = 1.7f
+        p.strokeWidth = 1.9f
         when (kind) {
             Icons.SWORDS -> {
-                c.drawLine(5f, 5f, 19f, 19f, p); c.drawLine(19f, 5f, 5f, 19f, p)
-                c.drawLine(4f, 8f, 8f, 4f, p); c.drawLine(20f, 8f, 16f, 4f, p)
-                c.drawLine(4f, 16f, 8f, 20f, p); c.drawLine(20f, 16f, 16f, 20f, p)
+                // espada que apunta arriba a la derecha (hoja rellena) + espada fina que la cruza con guarda en cruz
+                val blade = Path().apply { moveTo(10f, 14f); lineTo(17.5f, 4.5f); lineTo(19.5f, 4.5f); lineTo(19.5f, 6.5f); lineTo(10f, 14f); close() }
+                c.drawPath(blade, f); c.drawPath(blade, p)
+                c.drawLine(7.5f, 12.5f, 11.5f, 16.5f, p)          // guarda
+                c.drawLine(9.5f, 14.5f, 6f, 18f, p)                // empunadura
+                c.drawLine(5f, 5f, 15.5f, 15.5f, p)                // espada fina
+                c.drawLine(13f, 18f, 18f, 13f, p)                  // guarda en cruz
+                c.drawLine(16.5f, 16.5f, 19f, 19f, p)
             }
             Icons.HUD -> {
-                c.drawRoundRect(RectF(4f, 4f, 20f, 20f), 3f, 3f, p)
-                c.drawRoundRect(RectF(7f, 7.5f, 11f, 11.5f), 0.8f, 0.8f, p)
-                c.drawLine(13.5f, 8f, 17f, 8f, p); c.drawLine(13.5f, 11f, 17f, 11f, p)
-                c.drawLine(7f, 15f, 17f, 15f, p)
+                c.drawRoundRect(RectF(4f, 4f, 20f, 20f), 2.2f, 2.2f, p)
+                c.drawLine(7.5f, 8.5f, 12.5f, 8.5f, p); c.drawLine(14.8f, 8.5f, 16.5f, 8.5f, p)
+                c.drawLine(9f, 12f, 16.5f, 12f, p)
+                c.drawLine(7.5f, 15.5f, 12.5f, 15.5f, p); c.drawLine(14.8f, 15.5f, 16.5f, 15.5f, p)
             }
             Icons.EYE -> {
-                c.drawOval(RectF(2.5f, 6.5f, 21.5f, 17.5f), p)
-                c.drawCircle(12f, 12f, 3.2f, p)
+                val eye = Path().apply { moveTo(1.8f, 12f); quadTo(12f, 2.5f, 22.2f, 12f); quadTo(12f, 21.5f, 1.8f, 12f); close() }
+                f.alpha = 70; c.drawPath(eye, f); f.alpha = 255
+                c.drawPath(eye, p)
+                c.drawCircle(12f, 12f, 4f, p)
+                c.drawCircle(12f, 12f, 1.8f, f)
             }
             Icons.CHEV -> {
-                val a = Path().apply { moveTo(5f, 6f); lineTo(11f, 12f); lineTo(5f, 18f) }
-                val d = Path().apply { moveTo(12f, 6f); lineTo(18f, 12f); lineTo(12f, 18f) }
-                c.drawPath(a, p); c.drawPath(d, p)
+                p.strokeWidth = 1.7f
+                val a1 = Path().apply { moveTo(5.5f, 5f); lineTo(12.5f, 12f); lineTo(5.5f, 19f) }
+                val a2 = Path().apply { moveTo(11.5f, 5f); lineTo(18.5f, 12f); lineTo(11.5f, 19f) }
+                c.drawPath(a1, p); c.drawPath(a2, p)
             }
             Icons.MENU -> {
-                c.drawLine(5f, 7f, 19f, 7f, p); c.drawLine(5f, 12f, 19f, 12f, p); c.drawLine(5f, 17f, 19f, 17f, p)
+                p.strokeWidth = 2.1f
+                c.drawLine(5f, 6.5f, 19f, 6.5f, p); c.drawLine(5f, 12f, 19f, 12f, p); c.drawLine(5f, 17.5f, 19f, 17.5f, p)
             }
             Icons.SHIRT -> {
                 val sh = Path().apply {
-                    moveTo(9f, 4f); lineTo(4f, 8f); lineTo(7f, 11f); lineTo(7f, 20f); lineTo(17f, 20f)
-                    lineTo(17f, 11f); lineTo(20f, 8f); lineTo(15f, 4f); quadTo(12f, 7f, 9f, 4f); close()
+                    moveTo(8.5f, 4.5f); lineTo(3.5f, 7.5f); lineTo(5.5f, 11f); lineTo(8f, 10f); lineTo(8f, 20f)
+                    lineTo(16f, 20f); lineTo(16f, 10f); lineTo(18.5f, 11f); lineTo(20.5f, 7.5f); lineTo(15.5f, 4.5f)
+                    quadTo(12f, 8f, 8.5f, 4.5f); close()
                 }
                 c.drawPath(sh, p)
             }
             Icons.SEARCH -> {
-                c.drawCircle(10.5f, 10.5f, 5.5f, p); c.drawLine(14.6f, 14.6f, 19.5f, 19.5f, p)
+                c.drawCircle(10.5f, 10.5f, 6f, p); c.drawLine(15f, 15f, 20f, 20f, p)
             }
             Icons.FRIENDS -> {
-                c.drawCircle(9f, 8f, 3f, p); c.drawArc(RectF(3.5f, 13f, 14.5f, 25f), 180f, 180f, false, p)
-                c.drawCircle(16.5f, 9f, 2.5f, p); c.drawArc(RectF(13f, 14f, 21f, 23f), 200f, 160f, false, p)
+                c.drawCircle(9f, 8f, 3f, p); c.drawArc(RectF(3f, 13.5f, 15f, 25f), 180f, 180f, false, p)
+                c.drawArc(RectF(12.5f, 5f, 18.5f, 11f), 280f, 200f, false, p)
+                c.drawArc(RectF(14f, 13.5f, 22f, 22f), 235f, 125f, false, p)
             }
             Icons.PERSON -> {
-                c.drawCircle(12f, 8f, 3.6f, p); c.drawArc(RectF(5f, 14f, 19f, 27f), 180f, 180f, false, p)
-            }
-            Icons.ROCKET -> {
+                c.drawCircle(12f, 8f, 3.6f, p)
                 val body = Path().apply {
-                    moveTo(12f, 2.5f); quadTo(17f, 6f, 16.5f, 13f); lineTo(7.5f, 13f); quadTo(7f, 6f, 12f, 2.5f); close()
+                    moveTo(5f, 20f); lineTo(5f, 18f); quadTo(5f, 14.5f, 9f, 14.5f); lineTo(15f, 14.5f)
+                    quadTo(19f, 14.5f, 19f, 18f); lineTo(19f, 20f); close()
                 }
                 c.drawPath(body, p)
-                c.drawCircle(12f, 8.5f, 1.6f, p)
-                c.drawLine(7.5f, 11f, 4.5f, 15.5f, p); c.drawLine(4.5f, 15.5f, 7.5f, 14.5f, p)
-                c.drawLine(16.5f, 11f, 19.5f, 15.5f, p); c.drawLine(19.5f, 15.5f, 16.5f, 14.5f, p)
-                c.drawLine(12f, 15f, 12f, 20f, p)
+            }
+            Icons.ROCKET -> {
+                c.rotate(45f, 12f, 11.5f)                            // cohete vertical girado: apunta arriba a la derecha
+                val body = Path().apply { moveTo(12f, 1.5f); quadTo(18f, 6f, 16.8f, 14f); lineTo(7.2f, 14f); quadTo(6f, 6f, 12f, 1.5f); close() }
+                c.drawPath(body, p)
+                c.drawCircle(12f, 8f, 1.7f, f)
+                val l = Path().apply { moveTo(7.6f, 10.5f); lineTo(4.2f, 15.5f); lineTo(7.6f, 14.5f) }
+                val r = Path().apply { moveTo(16.4f, 10.5f); lineTo(19.8f, 15.5f); lineTo(16.4f, 14.5f) }
+                c.drawPath(l, p); c.drawPath(r, p)
+                val fl = Path().apply { moveTo(10f, 16.5f); lineTo(12f, 20.5f); lineTo(14f, 16.5f) }
+                c.drawPath(fl, p)
             }
         }
         c.restore()
@@ -154,6 +177,38 @@ class HoverRow(
                 it.setStroke((density).toInt().coerceAtLeast(1), if (on) lineOn else line)
             }
             c.alpha = if (i < 0 || on) 1f else 0.85f
+        }
+    }
+}
+
+/** Lienzo con las medidas del diseno original (941 x 1672), escalado al ancho de la pantalla. */
+class DesignLayout(ctx: Context) : ViewGroup(ctx) {
+    private class Item(val v: View, val x: Float, val y: Float, val w: Float, val h: Float, val baselineY: Float?)
+    private val items = ArrayList<Item>()
+    private var s = 1f
+
+    /** x, y, w, h en pixeles de diseno. */
+    fun add(v: View, x: Float, y: Float, w: Float, h: Float) { items.add(Item(v, x, y, w, h, null)); addView(v) }
+    /** Texto colocado por su linea base. */
+    fun addText(v: TextView, x: Float, baselineY: Float, w: Float) { items.add(Item(v, x, 0f, w, 0f, baselineY)); addView(v) }
+
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        val w = MeasureSpec.getSize(widthSpec)
+        s = w / Spec.DW
+        for (it in items) {
+            val cw = MeasureSpec.makeMeasureSpec((it.w * s).toInt(), MeasureSpec.EXACTLY)
+            val ch = if (it.baselineY == null) MeasureSpec.makeMeasureSpec((it.h * s).toInt(), MeasureSpec.EXACTLY)
+                     else MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            it.v.measure(cw, ch)
+        }
+        setMeasuredDimension(w, (Spec.DH * s).toInt())
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        for (it in items) {
+            val left = (it.x * s).toInt()
+            val top = if (it.baselineY == null) (it.y * s).toInt() else (it.baselineY * s - it.v.baseline).toInt()
+            it.v.layout(left, top, left + it.v.measuredWidth, top + it.v.measuredHeight)
         }
     }
 }

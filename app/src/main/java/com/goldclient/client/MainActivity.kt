@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -87,34 +88,51 @@ class MainActivity : AppCompatActivity() {
     // ---------- ciclo de vida ----------
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val frame = FrameLayout(this).apply { setBackgroundColor(BG) }
-        frame.addView(ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageDrawable(homeBackground()) },
-            FrameLayout.LayoutParams(-1, -1))
-        val root = vbox().apply { setPadding(dp(14), dp(34), dp(14), dp(14)); clipChildren = false; clipToPadding = false }
-        frame.addView(root, FrameLayout.LayoutParams(-1, -1))
+        val ds = resources.displayMetrics.widthPixels / Spec.DW
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#040406")) }
+        frame.addView(ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_XY; setImageDrawable(homeBackground()) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         content = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
-        root.addView(content, lp(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        frame.addView(content, FrameLayout.LayoutParams(-1, -1))
 
-        logView = tv("", 11f, Color.parseColor("#6FCF97")).apply { typeface = Typeface.MONOSPACE; maxLines = 3 }
-        status = tv("", 11f, Color.parseColor("#A8A8B3"))
-        val launchIcon = ImageView(this).apply { setImageDrawable(IconDrawable(Icons.ROCKET, Color.parseColor("#EDEDED"), dp(26))) }
-        val launchText = tv("LAUNCH 0.15.10 CORE", 15f, Color.parseColor("#EDEDED"), true).apply {
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); letterSpacing = 0.12f; setPadding(dp(14), 0, 0, 0)
-        }
-        btn = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            background = box(Color.parseColor("#CC17171C"), Color.parseColor("#66F5B700"), 16)
+        logView = ptv("", 20f * ds, Color.parseColor("#6FCF97")).apply { typeface = Typeface.MONOSPACE; maxLines = 2 }
+        status = ptv("", 20f * ds, Color.parseColor("#A8A8B3"))
+        btn = FrameLayout(this).apply {
+            background = boxPx(Color.parseColor("#B015151A"), Color.parseColor("#77FFFFFF"), 26f * ds, (1.5f * ds).toInt().coerceAtLeast(1))
             isClickable = true; isFocusable = true
-            addView(launchIcon, lp(dp(26), dp(26))); addView(launchText)
+            val ib = Spec.ICON.getValue("ic_launch")
+            addView(iconView("ic_launch", ib, ds), FrameLayout.LayoutParams((ib[2] * ds).toInt(), (ib[3] * ds).toInt(), Gravity.START or Gravity.CENTER_VERTICAL)
+                .apply { leftMargin = ((ib[0] - 44f) * ds).toInt() })
+            addView(ptv("LAUNCH 0.15.10 CORE", 30f * ds, Color.parseColor("#E6E6EA")).apply { letterSpacing = 0.12f },
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.CENTER_VERTICAL)
+                    .apply { leftMargin = ((330f - 44f) * ds).toInt() })
             setOnClickListener { launchSequence() }
         }
-        root.addView(logView); root.addView(status)
-        root.addView(btn, lp(ViewGroup.LayoutParams.MATCH_PARENT, dp(58), 0f, dp(2)))
         setContentView(frame)
         showHome(); refreshStatus(); writeCfg()
     }
 
-    private fun swap(v: View) { content.removeAllViews(); content.addView(v, FrameLayout.LayoutParams(-1, -1)) }
+    private var onHome = true
+    private fun swap(v: View, pad: Boolean = true) {
+        onHome = !pad
+        if (pad) v.setPadding(dp(14), dp(14), dp(14), dp(14))
+        content.removeAllViews(); content.addView(v, FrameLayout.LayoutParams(-1, -1))
+    }
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() { if (!onHome) showHome() else super.onBackPressed() }
+
+    private fun boxPx(fill: Int, stroke: Int, rPx: Float, strokePx: Int) = GradientDrawable().apply {
+        setColor(fill); cornerRadius = rPx; setStroke(strokePx, stroke)
+    }
+    private fun ptv(text: String, px: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
+        this.text = text; setTextSize(TypedValue.COMPLEX_UNIT_PX, px); setTextColor(color); includeFontPadding = false
+        typeface = if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) else Typeface.MONOSPACE
+    }
+    private fun iconView(name: String, spec: FloatArray, ds: Float) = ImageView(this).apply {
+        val id = resources.getIdentifier(name, "drawable", packageName)
+        if (id != 0) setImageResource(id)
+        scaleType = ImageView.ScaleType.FIT_XY
+    }
 
     // ---------- HOME ----------
     private fun homeBackground(): Drawable {
@@ -131,52 +149,76 @@ class MainActivity : AppCompatActivity() {
 
     private fun ver(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" } catch (e: Exception) { "?" }
 
-    private fun iconChip(label: String, kind: Int, click: () -> Unit): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(16), 0, dp(18), 0)
-        background = box(Color.parseColor("#B01A1A1F"), Color.parseColor("#55FFFFFF"), 14)
-        addView(ImageView(context).apply { setImageDrawable(IconDrawable(kind, Color.parseColor("#EDEDED"), dp(22))) }, lp(dp(22), dp(22)))
-        addView(tv(label, 13f, Color.parseColor("#EDEDED")).apply { setPadding(dp(8), 0, 0, 0) })
-        isClickable = true
-        setOnClickListener { click() }
-    }
-
     private fun showHome() {
-        val v = vbox().apply { clipChildren = false; clipToPadding = false }
-        v.addView(View(this), lp(1, 0, 1f))
-        v.addView(tv("Gold", 48f, Color.WHITE, true).apply {
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            setShadowLayer(dp(10).toFloat(), 0f, 0f, Color.parseColor("#99000000"))
-        })
-        v.addView(tv("PvP Client · Minecraft PE 0.15.10", 12f, Color.parseColor("#C9C9D2")).apply { setPadding(dp(2), 0, 0, dp(26)) })
-
-        val names = categories.keys.toList()
-        val kinds = listOf(Icons.SWORDS, Icons.HUD, Icons.EYE, Icons.CHEV, Icons.MENU)
-        val fill = Color.parseColor("#B01A1A1F")
+        val ds = resources.displayMetrics.widthPixels / Spec.DW
         val line = Color.parseColor("#55FFFFFF")
+        val fill = Color.parseColor("#B01A1A1F")
+        val strokePx = (1.5f * ds).toInt().coerceAtLeast(1)
+        val d = DesignLayout(this)
+
+        // titulo y subtitulo
+        d.addText(ptv("Gold", 96f * ds, Color.WHITE, true).apply { setShadowLayer(14f * ds, 0f, 0f, Color.parseColor("#99000000")) }, 52f, 660f, 520f)
+        d.addText(ptv("PvP Client · Minecraft PE 0.15.10", 22f * ds, Color.parseColor("#C9C9D2")), 55f, 703f, 800f)
+
+        // las 5 fichas (44..902 x 784..941) con efecto de lupa
+        val names = categories.keys.toList()
+        val ids = listOf("ic_pvp", "ic_hud", "ic_visuals", "ic_player", "ic_misc")
+        val half = (7.25f * ds).toInt()
         val row = HoverRow(this, resources.displayMetrics.density, fill, Color.parseColor("#CC55555D"), line, Color.parseColor("#DDFFFFFF")) { i ->
             showCategory(names[i])
         }
         names.forEachIndexed { i, name ->
-            val tile = vbox().apply {
-                gravity = Gravity.CENTER; background = box(fill, line, 18)
-                addView(ImageView(context).apply { setImageDrawable(IconDrawable(kinds[i], Color.parseColor("#EDEDED"), dp(30))) }, lp(dp(30), dp(30)))
-                addView(tv(name, 12f, Color.parseColor("#EDEDED")).apply { setPadding(0, dp(8), 0, 0) })
+            val ib = Spec.ICON.getValue(ids[i])
+            val tile = FrameLayout(this).apply {
+                background = boxPx(fill, line, 22f * ds, strokePx)
+                addView(iconView(ids[i], ib, ds).apply { translationY = ((ib[1] + ib[3] / 2f) - 862.5f) * ds },
+                    FrameLayout.LayoutParams((ib[2] * ds).toInt(), (ib[3] * ds).toInt(), Gravity.CENTER))
+                addView(ptv(name, 22f * ds, Color.parseColor("#EDEDED")).apply { translationY = 40.5f * ds },
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
             }
-            row.addView(tile, lp(0, dp(84), 1f, dp(4)))
+            row.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(half, 0, half, 0) })
         }
-        v.addView(row, lp(-1, -2))
+        d.add(row, 44f - 7.25f, 784f, 858f + 14.5f, 157f)
 
-        val chips = hbox()
-        fun addChip(label: String, kind: Int, click: () -> Unit) { chips.addView(iconChip(label, kind, click), lp(-2, dp(46), 0f, dp(4))) }
-        addChip("Wardrobe", Icons.SHIRT) { showWardrobe() }
-        addChip("Search", Icons.SEARCH) { toast("Search: próximamente") }
-        addChip("Friends", Icons.FRIENDS) { toast("Friends: próximamente") }
-        addChip("Profiles", Icons.PERSON) { toast("Profiles: próximamente") }
-        addChip("Log", Icons.MENU) { showLog() }
-        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; addView(chips) },
-            lp(-1, -2).apply { topMargin = dp(18); bottomMargin = dp(14) })
-        swap(v)
+        // fila de botones: x, ancho, icono, inicio del texto
+        data class Chip(val label: String, val x: Float, val w: Float, val icon: String, val textX: Float, val click: () -> Unit)
+        val chips = listOf(
+            Chip("Wardrobe", 52f, 211f, "ic_wardrobe", 131f) { showWardrobe() },
+            Chip("Search", 279f, 178f, "ic_search", 354f) { toast("Search: próximamente") },
+            Chip("Friends", 472f, 177f, "ic_friends", 546f) { toast("Friends: próximamente") },
+            Chip("Profiles", 664f, 175f, "ic_profiles", 734f) { toast("Profiles: próximamente") }
+        )
+        for (c in chips) {
+            val ib = Spec.ICON.getValue(c.icon)
+            val chip = FrameLayout(this).apply {
+                background = boxPx(fill, line, 24f * ds, strokePx)
+                isClickable = true
+                addView(iconView(c.icon, ib, ds).apply { translationY = ((ib[1] + ib[3] / 2f) - 1061.5f) * ds },
+                    FrameLayout.LayoutParams((ib[2] * ds).toInt(), (ib[3] * ds).toInt(), Gravity.START or Gravity.CENTER_VERTICAL)
+                        .apply { leftMargin = ((ib[0] - c.x) * ds).toInt() })
+                addView(ptv(c.label, 22f * ds, Color.parseColor("#EDEDED")),
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.CENTER_VERTICAL)
+                        .apply { leftMargin = ((c.textX - c.x) * ds).toInt() })
+                setOnClickListener { c.click() }
+            }
+            d.add(chip, c.x, 1020f, c.w, 83f)
+        }
+        // pastilla alta de la derecha del mockup: aqui abre el Log
+        d.add(View(this).apply {
+            background = boxPx(fill, line, 24f * ds, strokePx); isClickable = true
+            setOnClickListener { showLog() }
+        }, 853f, 985f, 48f, 151f)
+
+        // estado y boton de lanzar (44..901 x 1507..1603)
+        (logView.parent as? ViewGroup)?.removeView(logView)
+        (status.parent as? ViewGroup)?.removeView(status)
+        (btn.parent as? ViewGroup)?.removeView(btn)
+        d.addText(logView, 44f, 1455f, 857f)
+        d.addText(status, 44f, 1492f, 857f)
+        d.add(btn, 44f, 1507f, 857f, 96f)
+
+        swap(d.also { it.clipChildren = false }, false)
+        d.layoutParams = FrameLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
     }
 
     // ---------- visor de log (para diagnosticar sin adb) ----------
