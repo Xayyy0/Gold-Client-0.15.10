@@ -153,7 +153,7 @@ class MainActivity : AppCompatActivity() {
             // solo nuestras lineas (GCORE) y errores graves: el resto del log del sistema es ruido
             val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "GCORE:V", "AndroidRuntime:E", "DEBUG:V", "libc:F")).inputStream.bufferedReader().readText() }
                       catch (e: Exception) { "No pude leer el log: ${e.message}" }
-            val out = raw.lines().filter { it.isNotBlank() && !it.startsWith("---") }.takeLast(150).joinToString("\n")
+            val out = raw.lines().filter { it.isNotBlank() && !it.startsWith("---") }.takeLast(220).joinToString("\n")
             runOnUiThread { t.text = if (out.isBlank()) "(sin lineas GCORE: el juego no llego a abrir)" else out }
         }
     }

@@ -2,6 +2,7 @@
 // Lib de la GameActivity del launcher: carga libemu32.so del Minecraft instalado (sin modificarlo) y le pasa el control.
 // Hooks por GOT-patch sobre los imports de libemu32.so (EGL + entrada tactil).
 // Dibuja dentro del juego: contador de FPS, boton flotante "G" y el menu Gold (PvP/HUD/Visuals/Player/Misc).
+#include <android/asset_manager.h>
 #include <android/input.h>
 #include <android/log.h>
 #include <android/native_activity.h>
@@ -15,7 +16,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdint>
+#include <fcntl.h>
+#include <pthread.h>
 #include <cstring>
 #include <string>
 #include "font.h"
@@ -308,6 +313,54 @@ static EGLBoolean h_swapBuffers(EGLDisplay d, EGLSurface s) {
 }
 
 
+
+// ======================= Ver lo que hace el emulador =======================
+// 1) stdout/stderr -> logcat (el emulador imprime errores ahi y Android los descarta)
+static int g_pipe[2];
+static void* stdioThread(void*) {
+    char buf[1024]; std::string acc; ssize_t n;
+    while ((n = read(g_pipe[0], buf, sizeof(buf))) > 0) {
+        for (ssize_t i = 0; i < n; i++) {
+            if (buf[i] == '\n') { if (!acc.empty()) LOGI("[emu] %s", acc.c_str()); acc.clear(); }
+            else if (acc.size() < 400) acc += buf[i];
+        }
+    }
+    return nullptr;
+}
+static void redirectStdio() {
+    if (pipe(g_pipe) != 0) return;
+    setvbuf(stdout, nullptr, _IOLBF, 0); setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(g_pipe[1], 1); dup2(g_pipe[1], 2);
+    pthread_t t; pthread_create(&t, nullptr, stdioThread, nullptr); pthread_detach(t);
+}
+// 2) archivos y assets que abre
+static std::atomic<int> g_pathLogs{0};
+static void logPath(const char* kind, const char* path, bool ok) {
+    if (!path) return;
+    if (!strncmp(path, "/proc/", 6) || !strncmp(path, "/sys/", 5) || !strncmp(path, "/dev/", 5)) return;
+    if (g_pathLogs++ < 150) LOGI("%s %s -> %s", kind, path, ok ? "ok" : "FALLO");
+}
+static AAsset* (*o_assetOpen)(AAssetManager*, const char*, int) = nullptr;
+static AAsset* h_assetOpen(AAssetManager* m, const char* f, int mode) { AAsset* r = o_assetOpen(m, f, mode); logPath("asset", f, r != nullptr); return r; }
+static FILE* (*o_fopen)(const char*, const char*) = nullptr;
+static FILE* h_fopen(const char* p, const char* m) { FILE* r = o_fopen(p, m); logPath("fopen", p, r != nullptr); return r; }
+static int (*o_open)(const char*, int, ...) = nullptr;
+static int h_open(const char* p, int flags, ...) {
+    mode_t mode = 0;
+    if (flags & O_CREAT) { va_list ap; va_start(ap, flags); mode = (mode_t)va_arg(ap, int); va_end(ap); }
+    int r = o_open(p, flags, mode); logPath("open", p, r >= 0); return r;
+}
+// 3) mensajes que el emulador manda a logcat con su propia etiqueta
+static int (*o_logPrint)(int, const char*, const char*, ...) = nullptr;
+static int h_logPrint(int prio, const char* tag, const char* fmt, ...) {
+    char b[512]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof(b), fmt ? fmt : "", ap); va_end(ap);
+    return __android_log_print(ANDROID_LOG_INFO, TAG, "[emu:%s] %s", tag ? tag : "?", b);
+}
+static int (*o_logWrite)(int, const char*, const char*) = nullptr;
+static int h_logWrite(int prio, const char* tag, const char* msg) {
+    return __android_log_print(ANDROID_LOG_INFO, TAG, "[emu:%s] %s", tag ? tag : "?", msg ? msg : "");
+}
+
 // ======================= Diagnostico =======================
 static EGLSurface (*o_createWinSurf)(EGLDisplay, EGLConfig, EGLNativeWindowType, const EGLint*) = nullptr;
 static EGLSurface h_createWinSurf(EGLDisplay d, EGLConfig c, EGLNativeWindowType w, const EGLint* a) {
@@ -334,6 +387,7 @@ static void h_focus(ANativeActivity* a, int f) { LOGI("callback: foco=%d", f); i
 // ======================= Entrada NativeActivity (proxy) =======================
 extern "C" __attribute__((visibility("default")))
 void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t size) {
+    redirectStdio();
     LOGI("libgcore cargada, abriendo libemu32.so");
     g_on[IDX_FPS] = true; g_on[IDX_UNCAP] = true;
     // El launcher copia libemu32.so del Minecraft instalado a <filesDir>/gold/ antes de abrir esta actividad.
@@ -348,8 +402,13 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
         {"AInputQueue_getEvent",(void*)h_getEvent,     (void**)&o_getEvent,     0},
         {"eglCreateWindowSurface",(void*)h_createWinSurf,(void**)&o_createWinSurf, 0},
         {"eglMakeCurrent",      (void*)h_makeCurrent,  (void**)&o_makeCurrent,  0},
+        {"AAssetManager_open",  (void*)h_assetOpen,    (void**)&o_assetOpen,    0},
+        {"fopen",               (void*)h_fopen,        (void**)&o_fopen,        0},
+        {"open",                (void*)h_open,         (void**)&o_open,         0},
+        {"__android_log_print", (void*)h_logPrint,     (void**)&o_logPrint,     0},
+        {"__android_log_write", (void*)h_logWrite,     (void**)&o_logWrite,     0},
     };
-    patchGot("libemu32.so", hooks, 5);
+    patchGot("libemu32.so", hooks, 10);
     if (!o_swapBuffers) LOGE("eglSwapBuffers no enganchado: sin overlay");
     if (!o_getEvent)    LOGE("AInputQueue_getEvent no enganchado: el menu se ve pero no responde al toque");
 
