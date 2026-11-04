@@ -1,0 +1,12 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+     "controller.render.player.east": {
+      "geometry": "Geometry.dh",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.east" ],
+      "is_hurt_color": {},
+      "on_fire_color": {}
+    }
+  }
+}

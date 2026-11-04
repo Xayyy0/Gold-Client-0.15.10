@@ -1,0 +1,28 @@
+
+{ 
+"format_version": "1.8.0", 
+"render_controllers": { 
+"controller.render.player.click": { 
+"rebuild_animation_matrices": true, 
+"arrays": { 
+"textures": { 
+"array.click": [ 
+"texture.click1", 
+"texture.click2", 
+"texture.click3", 
+"texture.click4", 
+"texture.click5",
+"texture.click6", 
+"texture.click7", 
+"texture.click8", 
+"texture.click9", 
+"texture.click10"
+] 
+} 
+}, 
+"geometry": "Geometry.click", 
+"materials": [ { "*": "Material.default" } ], 
+"textures": [ "array.click[(query.anim_time * 4)]" ]
+} 
+} 
+}
