@@ -131,7 +131,7 @@ class MainActivity : AppCompatActivity() {
         small.addView(chip("Log") { showLog() }, lp(-2, -2, 0f, dp(4)))
         v.addView(small, lp(-2, -2).apply { topMargin = dp(18) })
         v.addView(View(this), lp(1, 0, 1.2f))
-        v.addView(tv("Gold Client Beta 1.0 · Minecraft PE 0.15.10", 10f, MUTED))
+        v.addView(tv("Gold Client ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }} · Minecraft PE 0.15.10", 10f, MUTED))
         swap(v)
     }
 
@@ -150,12 +150,11 @@ class MainActivity : AppCompatActivity() {
         v.addView(ScrollView(this).apply { addView(t) }, lp(-1, 0, 1f).apply { topMargin = dp(8) })
         swap(v)
         io.execute {
-            val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "400")).inputStream.bufferedReader().readText() }
+            // solo nuestras lineas (GCORE) y errores graves: el resto del log del sistema es ruido
+            val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "GCORE:V", "AndroidRuntime:E", "DEBUG:V", "libc:F")).inputStream.bufferedReader().readText() }
                       catch (e: Exception) { "No pude leer el log: ${e.message}" }
-            val noise = listOf("Access denied finding property", "SetHeapTaggingLevel", "avc:", "audit(", "HWUI", "Choreographer")
-            val hit = raw.lines().filter { l -> l.isNotBlank() && noise.none { l.contains(it) } }.takeLast(130)
-            val out = hit.joinToString("\n")
-            runOnUiThread { t.text = if (out.isBlank()) "(log vacio)" else out }
+            val out = raw.lines().filter { it.isNotBlank() && !it.startsWith("---") }.takeLast(150).joinToString("\n")
+            runOnUiThread { t.text = if (out.isBlank()) "(sin lineas GCORE: el juego no llego a abrir)" else out }
         }
     }
 
@@ -257,6 +256,7 @@ class MainActivity : AppCompatActivity() {
                 writeCfg()
                 log("[2/3] Configuracion lista")
                 log("[3/3] Abriendo Gold Client...")
+                try { Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor() } catch (_: Exception) {}
                 runOnUiThread { startActivity(Intent(this, GameActivity::class.java)) }
             } catch (e: Exception) { log("ERROR: ${e.message}") }
             finally { runOnUiThread { btn.isEnabled = true; refreshStatus() } }
