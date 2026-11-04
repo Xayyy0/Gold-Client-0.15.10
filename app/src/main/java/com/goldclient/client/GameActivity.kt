@@ -25,10 +25,15 @@ class GameActivity : NativeActivity() {
 
     private var mcCtx: Context? = null
     private var loader: ClassLoader? = null
+    private var mcApk: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             val ai = packageManager.getApplicationInfo(GameHost.MC_PKG, 0)
+            // El emulador lee el juego de 32 bits (assets/jogo32) del "APK de esta app": le decimos que use el de Minecraft.
+            mcApk = ai.sourceDir
+            try { android.system.Os.setenv("EMU32_APK", ai.sourceDir, true) } catch (e: Exception) { Log.e("GCORE", "setenv: ${e.message}") }
+            Log.i("GCORE", "APK de Minecraft: ${ai.sourceDir}")
             mcCtx = createPackageContext(GameHost.MC_PKG, Context.CONTEXT_IGNORE_SECURITY)
             loader = GameLoader(ai.sourceDir, codeCacheDir.absolutePath, applicationInfo.nativeLibraryDir,
                 super.getClassLoader(), GameHost.emuFile(this).absolutePath)
@@ -38,6 +43,8 @@ class GameActivity : NativeActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    override fun getPackageCodePath(): String = mcApk ?: super.getPackageCodePath()
+    override fun getPackageResourcePath(): String = mcApk ?: super.getPackageResourcePath()
     override fun getAssets(): AssetManager = mcCtx?.assets ?: super.getAssets()
     override fun getClassLoader(): ClassLoader = loader ?: super.getClassLoader()
 
