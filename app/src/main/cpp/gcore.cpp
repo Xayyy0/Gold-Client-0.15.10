@@ -19,6 +19,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <fcntl.h>
 #include <pthread.h>
 #include <cstring>
@@ -40,7 +41,7 @@ static const ModDef MODS[] = {
     {"FPS Uncap", 4}, {"Fast Math", 4}, {"Chunk Optimizer", 4}, {"RAM Cleaner", 4},      // 17..
 };
 static const int NMOD = (int)(sizeof(MODS) / sizeof(MODS[0]));
-static const int IDX_FPS = 6, IDX_UNCAP = 17;    // modulos ya conectados
+static const int IDX_FPS = 6, IDX_UNCAP = 17, IDX_CPS = 1;    // modulos ya conectados
 static std::atomic<bool> g_on[32];
 
 static std::atomic<bool>  g_open{false};
@@ -104,6 +105,29 @@ static bool patchGot(const char* so, HookDef* hooks, int n) {
     for (int h = 0; h < n; h++) LOGI("hook %s: %d entradas GOT", hooks[h].name, hooks[h].hits);
     return true;
 }
+
+
+// ======================= Persistencia y CPS =======================
+static std::string g_cfgPath;
+static void loadCfg() {
+    FILE* f = fopen(g_cfgPath.c_str(), "r"); if (!f) return;
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        char* eq = strchr(line, '='); if (!eq) continue;
+        *eq = 0; int v = atoi(eq + 1);
+        for (int i = 0; i < NMOD; i++) if (!strcmp(MODS[i].name, line)) g_on[i] = (v != 0);
+    }
+    fclose(f);
+}
+static void saveCfg() {
+    FILE* f = fopen(g_cfgPath.c_str(), "w"); if (!f) return;
+    for (int i = 0; i < NMOD; i++) fprintf(f, "%s=%d\n", MODS[i].name, g_on[i] ? 1 : 0);
+    fclose(f);
+}
+static int64_t nowMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static int64_t g_taps[32]; static std::atomic<int> g_tapN{0};
+static void registerTap() { g_taps[g_tapN++ & 31] = nowMs(); }
+static int computeCps() { int64_t t = nowMs(); int c = 0; for (int i = 0; i < 32; i++) if (g_taps[i] > 0 && t - g_taps[i] <= 1000) c++; return c; }
 
 // ======================= Dibujo (scissor + glClear, sin shaders) =======================
 static void rect(int x, int y, int w, int h) { glScissor(x, y, w, h); glClear(GL_COLOR_BUFFER_BIT); }
@@ -200,7 +224,7 @@ static void drawMenu(const Lay& l) {
         if (on) color(0.96f, 0.72f, 0.f); else color(0.27f, 0.27f, 0.3f);
         rectTL(tx, ty, tw, th);
         color(1.f, 1.f, 1.f); rectTL(on ? tx + tw - th + sc : tx + sc, ty + sc, th - 2 * sc, th - 2 * sc);
-        if (i != IDX_FPS && i != IDX_UNCAP) { color(0.4f, 0.4f, 0.45f); text("soon", tx - textW("soon", sc) - pad, y + (l.rowH - FONT_H * sc) / 2, sc); }
+        if (i != IDX_FPS && i != IDX_UNCAP && i != IDX_CPS) { color(0.4f, 0.4f, 0.45f); text("soon", tx - textW("soon", sc) - pad, y + (l.rowH - FONT_H * sc) / 2, sc); }
     }
 }
 
@@ -224,6 +248,12 @@ static void drawAll(EGLDisplay dpy, EGLSurface surf) {
 
     Lay l = lay();
     if (g_on[IDX_FPS]) drawFps(l.sc);
+    if (g_on[IDX_CPS]) {
+        char b[24]; snprintf(b, sizeof(b), "CPS %d", computeCps());
+        int cy = g_on[IDX_FPS] ? 14 * l.sc : 3 * l.sc;
+        color(0.f, 0.f, 0.f);  rectTL(2 * l.sc, cy - l.sc, textW(b, l.sc) + 2 * l.sc, FONT_H * l.sc + 2 * l.sc);
+        color(0.3f, 1.f, 0.4f); text(b, 3 * l.sc, cy, l.sc);
+    }
     drawButton(l);
     if (g_open) drawMenu(l);
 
@@ -252,7 +282,7 @@ static bool onTouchDown(float x, float y) {      // true = el menu consume el to
         if (MODS[i].cat != g_cat) continue;
         int ry = l.listY + k * l.rowH; k++;
         if (ry + l.rowH > l.py + l.ph - l.pad) break;
-        if (inR(x, y, l.px + l.pad, ry, l.pw - 2 * l.pad, l.rowH)) { g_on[i] = !g_on[i]; return true; }
+        if (inR(x, y, l.px + l.pad, ry, l.pw - 2 * l.pad, l.rowH)) { g_on[i] = !g_on[i]; saveCfg(); return true; }
     }
     return true;
 }
@@ -267,6 +297,7 @@ static bool handleEvent(AInputEvent* e) {
         if (onTouchDown(AMotionEvent_getX(e, idx), AMotionEvent_getY(e, idx))) {
             g_grab = true; g_grabId = AMotionEvent_getPointerId(e, idx); return true;
         }
+        if (!g_open) registerTap();
         return g_open;
     }
     if (g_grab) {
@@ -390,6 +421,8 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
     redirectStdio();
     LOGI("libgcore cargada, abriendo libemu32.so");
     g_on[IDX_FPS] = true; g_on[IDX_UNCAP] = true;
+    g_cfgPath = std::string(activity->externalDataPath ? activity->externalDataPath : activity->internalDataPath) + "/gold_modules.cfg";
+    loadCfg();
     // El launcher copia libemu32.so del Minecraft instalado a <filesDir>/gold/ antes de abrir esta actividad.
     std::string emuPath = std::string(activity->internalDataPath) + "/gold/libemu32.so";
     void* emu = dlopen(emuPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
