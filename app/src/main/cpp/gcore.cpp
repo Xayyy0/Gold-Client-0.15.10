@@ -288,17 +288,44 @@ static bool onTouchDown(float x, float y) {      // true = el menu consume el to
 }
 
 static bool g_grab = false; static int32_t g_grabId = -1;
+
+// ----- CPS: solo cuenta golpes (toques cortos en el mundo), no botones ni arrastres de camara -----
+struct Touch { bool on; float x, y; int64_t t; };
+static Touch g_t[16];
+// zonas de controles en pantalla (cruceta, hotbar, botones de las esquinas): un toque ahi no es un golpe
+static bool inControlZone(float x, float y) {
+    float W = (float)g_W, H = (float)g_H;
+    if (x < 0.26f * W && y > 0.50f * H) return true;                 // cruceta / joystick
+    if (y > 0.86f * H && x > 0.22f * W && x < 0.78f * W) return true; // hotbar
+    if (x > 0.88f * W && y > 0.70f * H) return true;                  // salto / agacharse
+    if (x > 0.88f * W && y < 0.15f * H) return true;                  // pausa / chat
+    return false;
+}
+
 static bool handleEvent(AInputEvent* e) {
     if (AInputEvent_getType(e) != AINPUT_EVENT_TYPE_MOTION) return false;
     int32_t a = AMotionEvent_getAction(e);
     int act = a & AMOTION_EVENT_ACTION_MASK;
     int idx = (a & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
     if (act == AMOTION_EVENT_ACTION_DOWN || act == AMOTION_EVENT_ACTION_POINTER_DOWN) {
-        if (onTouchDown(AMotionEvent_getX(e, idx), AMotionEvent_getY(e, idx))) {
+        float x = AMotionEvent_getX(e, idx), y = AMotionEvent_getY(e, idx);
+        if (onTouchDown(x, y)) {
             g_grab = true; g_grabId = AMotionEvent_getPointerId(e, idx); return true;
         }
-        if (!g_open) registerTap();
+        int pid = AMotionEvent_getPointerId(e, idx);
+        if (!g_open && pid >= 0 && pid < 16) g_t[pid] = Touch{true, x, y, nowMs()};
         return g_open;
+    }
+    if (act == AMOTION_EVENT_ACTION_UP || act == AMOTION_EVENT_ACTION_POINTER_UP || act == AMOTION_EVENT_ACTION_CANCEL) {
+        int pid = AMotionEvent_getPointerId(e, idx);
+        if (act == AMOTION_EVENT_ACTION_CANCEL) { for (auto& t : g_t) t.on = false; }
+        else if (pid >= 0 && pid < 16 && g_t[pid].on) {
+            g_t[pid].on = false;
+            float x = AMotionEvent_getX(e, idx), y = AMotionEvent_getY(e, idx);
+            float dx = x - g_t[pid].x, dy = y - g_t[pid].y, slop = (float)g_H / 40.f;
+            if (!g_open && nowMs() - g_t[pid].t < 300 && dx * dx + dy * dy < slop * slop &&
+                !inControlZone(g_t[pid].x, g_t[pid].y)) registerTap();
+        }
     }
     if (g_grab) {
         if (act == AMOTION_EVENT_ACTION_UP || act == AMOTION_EVENT_ACTION_CANCEL ||

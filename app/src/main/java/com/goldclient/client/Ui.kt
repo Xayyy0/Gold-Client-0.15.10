@@ -1,6 +1,8 @@
 package com.goldclient.client
 
+import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
@@ -210,5 +212,44 @@ class DesignLayout(ctx: Context) : ViewGroup(ctx) {
             val top = if (it.baselineY == null) (it.y * s).toInt() else (it.baselineY * s - it.v.baseline).toInt()
             it.v.layout(left, top, left + it.v.measuredWidth, top + it.v.measuredHeight)
         }
+    }
+}
+
+/** Interruptor de vidrio: pista que cambia a dorado y bolita blanca que se desliza. */
+class GlassSwitch(
+    ctx: Context, initial: Boolean,
+    private val onColor: Int, private val offColor: Int,
+    private val onChange: (Boolean) -> Unit
+) : View(ctx) {
+    private var on = initial
+    private var pos = if (initial) 1f else 0f
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val knob = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+    init {
+        isClickable = true
+        setOnClickListener {
+            on = !on
+            ValueAnimator.ofFloat(pos, if (on) 1f else 0f).apply {
+                duration = 140
+                addUpdateListener { pos = it.animatedValue as Float; invalidate() }
+                start()
+            }
+            onChange(on)
+        }
+    }
+
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt()
+        return Color.argb(ch(Color.alpha(a), Color.alpha(b)), ch(Color.red(a), Color.red(b)),
+            ch(Color.green(a), Color.green(b)), ch(Color.blue(a), Color.blue(b)))
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat(); val r = h / 2f
+        track.color = mix(offColor, onColor, pos)
+        c.drawRoundRect(0f, 0f, w, h, r, r, track)
+        val kr = r - h * 0.14f
+        c.drawCircle(r + (w - 2f * r) * pos, r, kr, knob)
     }
 }

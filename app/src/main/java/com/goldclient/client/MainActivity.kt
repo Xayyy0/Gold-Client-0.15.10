@@ -29,10 +29,10 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- datos ----------
     private val categories = linkedMapOf(
-        "PvP" to ("⚔" to listOf("KeyStrokes", "CPS Counter", "Reach Display", "Armor Status", "Potion Status", "Old Animations", "Crosshair")),
+        "PvP" to ("⚔" to listOf("KeyStrokes", "CPS Counter", "Reach Display", "Armor Status", "Potion Status", "Old Animations")),
         "HUD" to ("▤" to listOf("FPS Counter", "Ping Counter", "Direction HUD")),
         "Visuals" to ("✦" to listOf("FullBright", "Smooth Zoom", "Motion Blur", "Particle Limiter")),
-        "Player" to ("»" to listOf("Show Capes", "Show Hats", "Show Wings", "Show Trails")),
+        "Player" to ("»" to listOf("Show Capes", "Show Wings", "Show Hats", "Show Trails")),
         "Misc" to ("≡" to listOf("FPS Uncap", "Fast Math", "Chunk Optimizer", "RAM Cleaner"))
     )
     private data class Item(val name: String, val price: Int)
@@ -69,9 +69,19 @@ class MainActivity : AppCompatActivity() {
     private fun lp(w: Int, h: Int, weight: Float = 0f, m: Int = 0) =
         LinearLayout.LayoutParams(w, h, weight).apply { setMargins(m, m, m, m) }
 
-    // ---------- estado guardado (también se vuelca a modules.cfg para libgcore) ----------
-    private fun isOn(k: String) = prefs.getBoolean("m_$k", false)
-    private fun setOn(k: String, v: Boolean) { prefs.edit().putBoolean("m_$k", v).apply(); writeCfg() }
+    // ---------- estado guardado ----------
+    // Los interruptores se guardan en gold_modules.cfg (el mismo archivo que lee el menu dentro del juego).
+    private fun cfgFile() = File(AssetManager2.workDir(this), "gold_modules.cfg")
+    private fun loadCfg(): MutableMap<String, Boolean> {
+        val m = linkedMapOf<String, Boolean>()
+        try { cfgFile().forEachLine { l -> val i = l.indexOf('='); if (i > 0) m[l.substring(0, i)] = l.substring(i + 1).trim() != "0" } } catch (_: Exception) {}
+        return m
+    }
+    private fun isOnIn(m: Map<String, Boolean>, k: String) = m[k] ?: (k == "FPS Counter" || k == "FPS Uncap")
+    private fun setOn(k: String, v: Boolean) {
+        val m = loadCfg(); m[k] = v
+        try { cfgFile().writeText(m.entries.joinToString("") { "${it.key}=${if (it.value) 1 else 0}\n" }) } catch (_: Exception) {}
+    }
     private fun owned(cat: String, n: String) = prefs.getBoolean("o_${cat}_$n", false)
     private fun equipped(cat: String) = prefs.getString("e_$cat", "None") ?: "None"
     private fun shards() = prefs.getInt("shards", 500)
@@ -79,9 +89,8 @@ class MainActivity : AppCompatActivity() {
     private fun writeCfg() = io.execute {
         try {
             val sb = StringBuilder()
-            categories.values.forEach { it.second.forEach { m -> sb.append("module.$m=${if (isOn(m)) 1 else 0}\n") } }
-            wardrobe.keys.forEach { sb.append("cosmetic.$it=${equipped(it)}\n") }
-            File(AssetManager2.workDir(this), "modules.cfg").writeText(sb.toString())
+            wardrobe.keys.forEach { sb.append("$it=${equipped(it)}\n") }
+            File(AssetManager2.workDir(this), "gold_cosmetics.cfg").writeText(sb.toString())
         } catch (_: Exception) {}
     }
 
@@ -221,22 +230,54 @@ class MainActivity : AppCompatActivity() {
         d.layoutParams = FrameLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
     }
 
+    // ---------- estilo de vidrio compartido por las pantallas ----------
+    private val GOLDC = Color.parseColor("#F5B700")
+    private fun dsc() = resources.displayMetrics.widthPixels / Spec.DW
+    private fun panel(r: Float = 22f) = boxPx(Color.parseColor("#A8141418"), Color.parseColor("#55FFFFFF"), r * dsc(), (1.5f * dsc()).toInt().coerceAtLeast(1))
+    private fun glassChip(text: String, on: Boolean = false, click: () -> Unit): TextView {
+        val ds = dsc()
+        return ptv(text, 24f * ds, if (on) GOLDC else Color.parseColor("#EDEDED")).apply {
+            setPadding((22 * ds).toInt(), (13 * ds).toInt(), (22 * ds).toInt(), (13 * ds).toInt())
+            background = boxPx(if (on) Color.parseColor("#CC2A2A31") else Color.parseColor("#B01A1A1F"),
+                if (on) GOLDC else Color.parseColor("#55FFFFFF"), 22f * ds, (1.5f * ds).toInt().coerceAtLeast(1))
+            isClickable = true
+            setOnClickListener { click() }
+        }
+    }
+    private fun topBar(right: View? = null): View {
+        val h = hbox().apply { setPadding(0, dp(6), 0, dp(10)) }
+        h.addView(glassChip("‹  Back") { showHome() })
+        h.addView(View(this), lp(0, 1, 1f))
+        right?.let { h.addView(it) }
+        return h
+    }
+    private fun titleRow(title: String, iconName: String?): View {
+        val ds = dsc()
+        val r = hbox().apply { setPadding(dp(2), dp(4), 0, dp(14)) }
+        if (iconName != null) {
+            val ib = Spec.ICON.getValue(iconName)
+            r.addView(iconView(iconName, ib, ds), lp((ib[2] * ds * 0.9f).toInt(), (ib[3] * ds * 0.9f).toInt()))
+        }
+        r.addView(ptv(title, 46f * ds, Color.WHITE, true).apply { setPadding(if (iconName != null) (18 * ds).toInt() else 0, 0, 0, 0) })
+        return r
+    }
+
     // ---------- visor de log (para diagnosticar sin adb) ----------
     private fun showLog() {
+        val ds = dsc()
         val v = vbox()
-        val top = hbox()
-        top.addView(chip("‹ Back") { showHome() }, lp(-2, -2, 0f, dp(2)))
-        val t = tv("Cargando...", 10f, Color.parseColor("#6FCF97")).apply { typeface = Typeface.MONOSPACE; setTextIsSelectable(true) }
-        top.addView(chip("Copiar") {
+        val t = ptv("Cargando...", 20f * ds, Color.parseColor("#6FCF97")).apply { setTextIsSelectable(true) }
+        v.addView(topBar(glassChip("Copiar") {
             val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("gold-log", t.text))
             toast("Log copiado")
-        }, lp(-2, -2, 0f, dp(2)))
-        v.addView(top)
-        v.addView(ScrollView(this).apply { addView(t) }, lp(-1, 0, 1f).apply { topMargin = dp(8) })
+        }))
+        v.addView(titleRow("Log", null))
+        val box = vbox().apply { background = panel(); setPadding(dp(12), dp(12), dp(12), dp(12)) }
+        box.addView(t)
+        v.addView(ScrollView(this).apply { addView(box) }, lp(-1, 0, 1f))
         swap(v)
         io.execute {
-            // solo nuestras lineas (GCORE) y errores graves: el resto del log del sistema es ruido
             val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "GCORE:V", "AndroidRuntime:E", "DEBUG:V", "libc:F")).inputStream.bufferedReader().readText() }
                       catch (e: Exception) { "No pude leer el log: ${e.message}" }
             val out = raw.lines().filter { it.isNotBlank() && !it.startsWith("---") }.takeLast(220).joinToString("\n")
@@ -244,74 +285,94 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- lista de módulos ----------
+    // ---------- lista de modulos ----------
     private fun showCategory(name: String) {
+        val ds = dsc()
+        val ids = mapOf("PvP" to "ic_pvp", "HUD" to "ic_hud", "Visuals" to "ic_visuals", "Player" to "ic_player", "Misc" to "ic_misc")
+        val working = setOf("FPS Counter", "FPS Uncap", "CPS Counter")
         val v = vbox()
-        v.addView(chip("‹ Back") { showHome() }, lp(-2, -2, 0f, dp(2)))
-        v.addView(tv(name, 22f, TXT, true).apply { setPadding(dp(4), dp(10), 0, dp(8)) })
-        val list = vbox().apply { background = box(GLASS, LINE, 14); setPadding(dp(12), dp(6), dp(12), dp(6)) }
+        v.addView(topBar())
+        v.addView(titleRow(name, ids[name]))
+        val cfg = loadCfg()
+        val list = vbox().apply { background = panel(); setPadding((16 * ds).toInt(), (10 * ds).toInt(), (16 * ds).toInt(), (10 * ds).toInt()) }
         categories[name]!!.second.forEach { m ->
-            val r = hbox().apply { setPadding(0, dp(6), 0, dp(6)) }
-            r.addView(tv(m, 15f), lp(0, -2, 1f))
-            r.addView(Switch(this).apply {
-                isChecked = isOn(m); setOnCheckedChangeListener { _, c -> setOn(m, c) }
-            })
-            list.addView(r)
+            val row = hbox().apply {
+                background = boxPx(Color.parseColor("#55202026"), Color.parseColor("#22FFFFFF"), 18f * ds, 1)
+                setPadding((20 * ds).toInt(), (14 * ds).toInt(), (20 * ds).toInt(), (14 * ds).toInt())
+            }
+            row.addView(ptv(m, 26f * ds, Color.parseColor("#EDEDED")), lp(0, -2, 1f))
+            val ok = m in working
+            row.addView(ptv(if (ok) "activo" else "pronto", 18f * ds, if (ok) GOLDC else Color.parseColor("#7C7C86"))
+                .apply { setPadding(0, 0, (16 * ds).toInt(), 0) })
+            row.addView(GlassSwitch(this, isOnIn(cfg, m), GOLDC, Color.parseColor("#44444C")) { setOn(m, it) },
+                lp((76 * ds).toInt(), (40 * ds).toInt()))
+            list.addView(row, lp(-1, -2).apply { setMargins(0, (6 * ds).toInt(), 0, (6 * ds).toInt()) })
         }
         v.addView(ScrollView(this).apply { addView(list) }, lp(-1, 0, 1f))
         swap(v)
     }
 
     // ---------- Wardrobe / Store / Rewards ----------
-    private fun showWardrobe(tab: String = "Wardrobe", cat: String = "Capes") {
+    private fun showWardrobe(tab: String = "Wardrobe", cat: String = "Capes", sel: String? = null) {
+        val ds = dsc()
         val v = vbox()
-        val top = hbox()
-        top.addView(chip("‹ Back") { showHome() }, lp(-2, -2, 0f, dp(2)))
-        listOf("Wardrobe", "Store", "Rewards").forEach { t ->
-            top.addView(chip(t, t == tab) { showWardrobe(t, cat) }, lp(-2, -2, 0f, dp(2)))
-        }
-        top.addView(View(this), lp(0, 1, 1f))
-        top.addView(tv("◆ ${shards()}", 13f, GOLD, true))
-        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(top) })
+        v.addView(topBar(glassChip("◆ ${shards()}", true) {}))
+        v.addView(titleRow("Wardrobe", "ic_wardrobe"))
 
+        val tabs = hbox()
+        listOf("Wardrobe", "Store", "Rewards").forEach { t -> tabs.addView(glassChip(t, t == tab) { showWardrobe(t, cat) }, lp(-2, -2, 0f, dp(3))) }
+        v.addView(tabs)
         if (tab == "Rewards") {
-            v.addView(tv("Rewards: próximamente", 15f, MUTED).apply { setPadding(0, dp(30), 0, 0) })
+            v.addView(ptv("Rewards: próximamente", 26f * ds, Color.parseColor("#9A9AA5")).apply { setPadding(0, dp(30), 0, 0) })
             swap(v); return
         }
-        val body = hbox().apply { gravity = Gravity.TOP }
-        val side = vbox().apply { background = box(GLASS, LINE, 12); setPadding(dp(6), dp(6), dp(6), dp(6)) }
-        wardrobe.keys.forEach { c ->
-            side.addView(tv(c, 13f, if (c == cat) GOLD else TXT).apply {
-                setPadding(dp(10), dp(9), dp(14), dp(9))
-                if (c == cat) background = box(GLASS_ON, GOLD, 8)
-                setOnClickListener { showWardrobe(tab, c) }
-            })
-        }
-        body.addView(side, lp(-2, -2, 0f, dp(2)))
+        val cats = hbox()
+        wardrobe.keys.forEach { c -> cats.addView(glassChip(c, c == cat) { showWardrobe(tab, c) }, lp(-2, -2, 0f, dp(3))) }
+        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(cats) },
+            lp(-1, -2).apply { topMargin = dp(8) })
 
-        val grid = GridLayout(this).apply { columnCount = 2 }
         val items = wardrobe[cat]!!.filter { it.name == "None" || (tab == "Store") != owned(cat, it.name) || it.price == 0 }
-        if (items.isEmpty()) grid.addView(tv("Próximamente", 14f, MUTED))
+        val chosen = items.firstOrNull { it.name == sel } ?: items.firstOrNull { it.name == equipped(cat) } ?: items.firstOrNull()
+
+        // vista previa
+        val prev = vbox().apply { background = panel(26f); gravity = Gravity.CENTER; setPadding(dp(14), dp(18), dp(14), dp(18)) }
+        if (chosen == null) {
+            prev.addView(ptv("Próximamente", 30f * ds, Color.parseColor("#9A9AA5")))
+        } else {
+            val have = chosen.price == 0 || owned(cat, chosen.name)
+            val isEq = equipped(cat) == chosen.name
+            prev.addView(ptv(chosen.name, 46f * ds, Color.WHITE, true))
+            prev.addView(ptv(if (isEq) "Equipped" else if (have) "Owned" else "◆ ${chosen.price}", 24f * ds, if (have) GOLDC else Color.parseColor("#9A9AA5"))
+                .apply { setPadding(0, dp(4), 0, dp(10)) })
+            prev.addView(glassChip(if (isEq) "Equipped" else if (have) "Equip" else "Buy  ◆ ${chosen.price}", !isEq) {
+                if (have) { prefs.edit().putString("e_$cat", chosen.name).apply(); writeCfg() }
+                else if (shards() >= chosen.price) prefs.edit().putInt("shards", shards() - chosen.price).putBoolean("o_${cat}_${chosen.name}", true).apply()
+                else toast("Shards insuficientes")
+                showWardrobe(tab, cat, chosen.name)
+            })
+            prev.addView(ptv("Vista previa 3D: fase 4", 18f * ds, Color.parseColor("#6E6E78")).apply { setPadding(0, dp(10), 0, 0) })
+        }
+        v.addView(prev, lp(-1, -2).apply { topMargin = dp(10); bottomMargin = dp(10) })
+
+        // cuadricula
+        val grid = GridLayout(this).apply { columnCount = 2 }
+        val cw = (resources.displayMetrics.widthPixels - dp(28) - dp(16)) / 2
         items.forEach { it0 ->
             val have = it0.price == 0 || owned(cat, it0.name)
+            val selected = chosen?.name == it0.name
             val card = vbox().apply {
-                gravity = Gravity.CENTER; background = box(GLASS, if (equipped(cat) == it0.name) GOLD else LINE, 12)
-                setPadding(dp(8), dp(14), dp(8), dp(14))
-                addView(tv(it0.name, 14f, TXT, true))
-                addView(tv(if (equipped(cat) == it0.name) "Equipped" else if (have) "Owned" else "◆ ${it0.price}", 11f, if (have) GOLD else MUTED))
-                setOnClickListener {
-                    if (have) { prefs.edit().putString("e_$cat", it0.name).apply(); writeCfg() }
-                    else if (shards() >= it0.price) {
-                        prefs.edit().putInt("shards", shards() - it0.price).putBoolean("o_${cat}_${it0.name}", true).apply()
-                    } else toast("Shards insuficientes")
-                    showWardrobe(tab, cat)
-                }
+                gravity = Gravity.CENTER
+                background = boxPx(if (selected) Color.parseColor("#CC2A2A31") else Color.parseColor("#B01A1A1F"),
+                    if (selected) GOLDC else Color.parseColor("#55FFFFFF"), 20f * ds, (1.5f * ds).toInt().coerceAtLeast(1))
+                setPadding(dp(8), dp(16), dp(8), dp(16))
+                addView(ptv(it0.name, 26f * ds, Color.parseColor("#EDEDED"), true))
+                addView(ptv(if (equipped(cat) == it0.name) "Equipped" else if (have) "Owned" else "◆ ${it0.price}", 20f * ds,
+                    if (have) GOLDC else Color.parseColor("#8A8A94")).apply { setPadding(0, dp(4), 0, 0) })
+                setOnClickListener { showWardrobe(tab, cat, it0.name) }
             }
-            grid.addView(card, GridLayout.LayoutParams().apply { width = dp(120); height = -2; setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            grid.addView(card, GridLayout.LayoutParams().apply { width = cw; height = -2; setMargins(dp(4), dp(4), dp(4), dp(4)) })
         }
-        body.addView(ScrollView(this).apply { addView(grid) }, lp(0, -1, 1f))
-        v.addView(body, lp(-1, 0, 1f).apply { topMargin = dp(10) })
-        v.addView(tv("Vista previa 3D con rotación y zoom: fase 4", 10f, MUTED))
+        v.addView(ScrollView(this).apply { addView(grid) }, lp(-1, 0, 1f))
         swap(v)
     }
 
