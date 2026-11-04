@@ -1,0 +1,33 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+    "controller.render.player.northa": {
+      "geometry": "Geometry.left",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.right" ],
+      "is_hurt_color": {},
+      "on_fire_color": {}
+    },
+        "controller.render.player.easta": {
+      "geometry": "Geometry.left",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.left" ],
+      "is_hurt_color": {},
+      "on_fire_color": {}
+    },  
+    "controller.render.player.southa": {
+      "geometry": "Geometry.left",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.left" ],
+      "is_hurt_color": {},
+      "on_fire_color": {}
+    },
+    "controller.render.player.west": {
+      "geometry": "Geometry.left",
+      "materials": [ { "*": "Material.default" } ],
+      "textures": [ "Texture.left" ],
+      "is_hurt_color": {},
+      "on_fire_color": {}
+    }
+  }
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <queries><package android:name="com.mojang.minecraftpe" /></queries>
+    <application
+        android:allowBackup="false"
+        android:label="Gold Client"
+        android:requestLegacyExternalStorage="true"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true"
+        android:theme="@style/Theme.Gold">
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Aqui corre Minecraft (el emulador del APK instalado) con el menu Gold encima -->
+        <activity android:name=".GameActivity"
+            android:exported="false"
+            android:label="Gold Client"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density|layoutDirection|locale">
+            <meta-data android:name="android.app.lib_name" android:value="gcore" />
+        </activity>
+    </application>
+</manifest>

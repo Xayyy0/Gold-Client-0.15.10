@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.18)
+project(gcore CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_library(gcore SHARED gcore.cpp)
+target_link_libraries(gcore android log EGL GLESv2 dl)
+target_link_options(gcore PRIVATE -Wl,-z,max-page-size=16384)
