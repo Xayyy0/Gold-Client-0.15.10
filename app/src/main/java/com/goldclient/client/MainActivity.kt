@@ -3,7 +3,9 @@ package com.goldclient.client
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -46,7 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var content: FrameLayout
     private lateinit var status: TextView
     private lateinit var logView: TextView
-    private lateinit var btn: Button
+    private lateinit var btn: View
 
     // ---------- helpers de UI ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -85,53 +87,95 @@ class MainActivity : AppCompatActivity() {
     // ---------- ciclo de vida ----------
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = vbox().apply { setBackgroundColor(BG); setPadding(dp(14), dp(10), dp(14), dp(10)) }
-        content = FrameLayout(this)
+        val frame = FrameLayout(this).apply { setBackgroundColor(BG) }
+        frame.addView(ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageDrawable(homeBackground()) },
+            FrameLayout.LayoutParams(-1, -1))
+        val root = vbox().apply { setPadding(dp(14), dp(34), dp(14), dp(14)); clipChildren = false; clipToPadding = false }
+        frame.addView(root, FrameLayout.LayoutParams(-1, -1))
+        content = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
         root.addView(content, lp(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         logView = tv("", 11f, Color.parseColor("#6FCF97")).apply { typeface = Typeface.MONOSPACE; maxLines = 3 }
-        status = tv("", 12f, MUTED)
-        btn = Button(this).apply {
-            text = "LAUNCH 0.15.10 CORE"; setTextColor(Color.parseColor("#1A1400")); setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(GOLD, Color.parseColor("#B38600")))
-                .apply { cornerRadius = dp(12).toFloat() }
+        status = tv("", 11f, Color.parseColor("#A8A8B3"))
+        val launchIcon = ImageView(this).apply { setImageDrawable(IconDrawable(Icons.ROCKET, Color.parseColor("#EDEDED"), dp(26))) }
+        val launchText = tv("LAUNCH 0.15.10 CORE", 15f, Color.parseColor("#EDEDED"), true).apply {
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); letterSpacing = 0.12f; setPadding(dp(14), 0, 0, 0)
+        }
+        btn = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            background = box(Color.parseColor("#CC17171C"), Color.parseColor("#66F5B700"), 16)
+            isClickable = true; isFocusable = true
+            addView(launchIcon, lp(dp(26), dp(26))); addView(launchText)
             setOnClickListener { launchSequence() }
         }
         root.addView(logView); root.addView(status)
-        root.addView(btn, lp(ViewGroup.LayoutParams.MATCH_PARENT, dp(52), 0f, dp(2)))
-        setContentView(root)
+        root.addView(btn, lp(ViewGroup.LayoutParams.MATCH_PARENT, dp(58), 0f, dp(2)))
+        setContentView(frame)
         showHome(); refreshStatus(); writeCfg()
     }
 
     private fun swap(v: View) { content.removeAllViews(); content.addView(v, FrameLayout.LayoutParams(-1, -1)) }
 
     // ---------- HOME ----------
-    private fun showHome() {
-        val v = vbox().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        v.addView(View(this), lp(1, 0, 1f))
-        v.addView(tv("Gold", 40f, TXT, true).apply { typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); letterSpacing = 0.1f })
-        v.addView(tv("PvP Client · Minecraft PE 0.15.10", 12f, MUTED).apply { setPadding(0, 0, 0, dp(22)) })
+    private fun homeBackground(): Drawable {
+        val id = resources.getIdentifier("bg_home", "drawable", packageName)
+        if (id != 0) androidx.core.content.ContextCompat.getDrawable(this, id)?.let { return it }
+        val base = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#050507"), Color.parseColor("#0C0A06"), Color.parseColor("#050507")))
+        val glow = GradientDrawable().apply {
+            gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = dp(380).toFloat()
+            setGradientCenter(0.5f, 0.38f); colors = intArrayOf(Color.parseColor("#55F5B700"), Color.parseColor("#00000000"))
+        }
+        return LayerDrawable(arrayOf(base, glow))
+    }
 
-        val row = hbox()
-        categories.forEach { (name, g) ->
+    private fun ver(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" } catch (e: Exception) { "?" }
+
+    private fun iconChip(label: String, kind: Int, click: () -> Unit): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(16), 0, dp(18), 0)
+        background = box(Color.parseColor("#B01A1A1F"), Color.parseColor("#55FFFFFF"), 14)
+        addView(ImageView(context).apply { setImageDrawable(IconDrawable(kind, Color.parseColor("#EDEDED"), dp(22))) }, lp(dp(22), dp(22)))
+        addView(tv(label, 13f, Color.parseColor("#EDEDED")).apply { setPadding(dp(8), 0, 0, 0) })
+        isClickable = true
+        setOnClickListener { click() }
+    }
+
+    private fun showHome() {
+        val v = vbox().apply { clipChildren = false; clipToPadding = false }
+        v.addView(View(this), lp(1, 0, 1f))
+        v.addView(tv("Gold", 48f, Color.WHITE, true).apply {
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            setShadowLayer(dp(10).toFloat(), 0f, 0f, Color.parseColor("#99000000"))
+        })
+        v.addView(tv("PvP Client · Minecraft PE 0.15.10", 12f, Color.parseColor("#C9C9D2")).apply { setPadding(dp(2), 0, 0, dp(26)) })
+
+        val names = categories.keys.toList()
+        val kinds = listOf(Icons.SWORDS, Icons.HUD, Icons.EYE, Icons.CHEV, Icons.MENU)
+        val fill = Color.parseColor("#B01A1A1F")
+        val line = Color.parseColor("#55FFFFFF")
+        val row = HoverRow(this, resources.displayMetrics.density, fill, Color.parseColor("#CC55555D"), line, Color.parseColor("#DDFFFFFF")) { i ->
+            showCategory(names[i])
+        }
+        names.forEachIndexed { i, name ->
             val tile = vbox().apply {
-                gravity = Gravity.CENTER; background = box(GLASS, LINE, 16)
-                addView(tv(g.first, 24f, GOLD)); addView(tv(name, 11f, TXT).apply { setPadding(0, dp(6), 0, 0) })
-                setOnClickListener { showCategory(name) }
+                gravity = Gravity.CENTER; background = box(fill, line, 18)
+                addView(ImageView(context).apply { setImageDrawable(IconDrawable(kinds[i], Color.parseColor("#EDEDED"), dp(30))) }, lp(dp(30), dp(30)))
+                addView(tv(name, 12f, Color.parseColor("#EDEDED")).apply { setPadding(0, dp(8), 0, 0) })
             }
-            row.addView(tile, lp(0, dp(78), 1f, dp(3)))
+            row.addView(tile, lp(0, dp(84), 1f, dp(4)))
         }
         v.addView(row, lp(-1, -2))
 
-        val small = hbox().apply { gravity = Gravity.CENTER }
-        small.addView(chip("Wardrobe") { showWardrobe() }, lp(-2, -2, 0f, dp(4)))
-        small.addView(chip("Search") { toast("Search: próximamente") }, lp(-2, -2, 0f, dp(4)))
-        small.addView(chip("Friends") { toast("Friends: próximamente") }, lp(-2, -2, 0f, dp(4)))
-        small.addView(chip("Profiles") { toast("Profiles: próximamente") }, lp(-2, -2, 0f, dp(4)))
-        small.addView(chip("Log") { showLog() }, lp(-2, -2, 0f, dp(4)))
-        v.addView(small, lp(-2, -2).apply { topMargin = dp(18) })
-        v.addView(View(this), lp(1, 0, 1.2f))
-        v.addView(tv("Gold Client ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }} · Minecraft PE 0.15.10", 10f, MUTED))
+        val chips = hbox()
+        fun addChip(label: String, kind: Int, click: () -> Unit) { chips.addView(iconChip(label, kind, click), lp(-2, dp(46), 0f, dp(4))) }
+        addChip("Wardrobe", Icons.SHIRT) { showWardrobe() }
+        addChip("Search", Icons.SEARCH) { toast("Search: próximamente") }
+        addChip("Friends", Icons.FRIENDS) { toast("Friends: próximamente") }
+        addChip("Profiles", Icons.PERSON) { toast("Profiles: próximamente") }
+        addChip("Log", Icons.MENU) { showLog() }
+        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; addView(chips) },
+            lp(-1, -2).apply { topMargin = dp(18); bottomMargin = dp(14) })
         swap(v)
     }
 
@@ -235,7 +279,7 @@ class MainActivity : AppCompatActivity() {
     private fun mcInstalled() = packageManager.getLaunchIntentForPackage(MC_PKG) != null
     private fun refreshStatus() {
         status.text = (if (mcInstalled()) "Minecraft PE detectado" else "Minecraft PE NO instalado") +
-            " · assets: " + (if (AssetManager2.isUpToDate(this)) "listos" else "pendientes") + " · ABI ${AssetManager2.abi()}"
+            " · assets: " + (if (AssetManager2.isUpToDate(this)) "listos" else "pendientes") + " · ${ver()}"
     }
     private fun log(s: String) = runOnUiThread { logView.append(s + "\n") }
 

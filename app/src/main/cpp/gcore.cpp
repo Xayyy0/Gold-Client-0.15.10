@@ -184,7 +184,7 @@ struct Lay { int sc, pad, bx, by, bs, px, py, pw, ph, tabY, tabH, tabW, listY, r
 static Lay lay() {
     Lay l; int W = g_W, H = g_H;
     l.sc = std::max(1, H / 220); l.pad = 3 * l.sc;
-    l.bs = 16 * l.sc; l.bx = W - l.bs - 3 * l.sc; l.by = 3 * l.sc;
+    l.bs = 16 * l.sc; l.bx = W - 48 * l.sc; l.by = 3 * l.sc;   // a la izquierda del boton propio del juego (arriba a la derecha)
     l.pw = W * 70 / 100; l.ph = H * 80 / 100; l.px = (W - l.pw) / 2; l.py = (H - l.ph) / 2;
     l.tabY = l.py + l.pad + 24 * l.sc + l.pad; l.tabH = 18 * l.sc;
     l.tabW = (l.pw - 2 * l.pad - 4 * l.pad) / 5;
