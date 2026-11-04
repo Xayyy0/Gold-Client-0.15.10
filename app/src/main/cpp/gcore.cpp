@@ -307,6 +307,30 @@ static EGLBoolean h_swapBuffers(EGLDisplay d, EGLSurface s) {
     return o_swapBuffers(d, s);
 }
 
+
+// ======================= Diagnostico =======================
+static EGLSurface (*o_createWinSurf)(EGLDisplay, EGLConfig, EGLNativeWindowType, const EGLint*) = nullptr;
+static EGLSurface h_createWinSurf(EGLDisplay d, EGLConfig c, EGLNativeWindowType w, const EGLint* a) {
+    EGLSurface r = o_createWinSurf(d, c, w, a);
+    LOGI("eglCreateWindowSurface -> %p", r);
+    return r;
+}
+static EGLBoolean (*o_makeCurrent)(EGLDisplay, EGLSurface, EGLSurface, EGLContext) = nullptr;
+static EGLBoolean h_makeCurrent(EGLDisplay d, EGLSurface dr, EGLSurface rd, EGLContext c) {
+    static int n = 0;
+    EGLBoolean r = o_makeCurrent(d, dr, rd, c);
+    if (n++ < 6) LOGI("eglMakeCurrent(surf=%p ctx=%p) -> %u", dr, c, (unsigned)r);
+    return r;
+}
+static void (*o_winCreated)(ANativeActivity*, ANativeWindow*) = nullptr;
+static void h_winCreated(ANativeActivity* a, ANativeWindow* w) { LOGI("callback: ventana creada %p", w); if (o_winCreated) o_winCreated(a, w); }
+static void (*o_inputCreated)(ANativeActivity*, AInputQueue*) = nullptr;
+static void h_inputCreated(ANativeActivity* a, AInputQueue* q) { LOGI("callback: cola de entrada creada %p", q); if (o_inputCreated) o_inputCreated(a, q); }
+static void (*o_resume)(ANativeActivity*) = nullptr;
+static void h_resume(ANativeActivity* a) { LOGI("callback: onResume"); if (o_resume) o_resume(a); }
+static void (*o_focus)(ANativeActivity*, int) = nullptr;
+static void h_focus(ANativeActivity* a, int f) { LOGI("callback: foco=%d", f); if (o_focus) o_focus(a, f); }
+
 // ======================= Entrada NativeActivity (proxy) =======================
 extern "C" __attribute__((visibility("default")))
 void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t size) {
@@ -322,8 +346,10 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
         {"eglSwapInterval",     (void*)h_swapInterval, (void**)&o_swapInterval, 0},
         {"eglSwapBuffers",      (void*)h_swapBuffers,  (void**)&o_swapBuffers,  0},
         {"AInputQueue_getEvent",(void*)h_getEvent,     (void**)&o_getEvent,     0},
+        {"eglCreateWindowSurface",(void*)h_createWinSurf,(void**)&o_createWinSurf, 0},
+        {"eglMakeCurrent",      (void*)h_makeCurrent,  (void**)&o_makeCurrent,  0},
     };
-    patchGot("libemu32.so", hooks, 3);
+    patchGot("libemu32.so", hooks, 5);
     if (!o_swapBuffers) LOGE("eglSwapBuffers no enganchado: sin overlay");
     if (!o_getEvent)    LOGE("AInputQueue_getEvent no enganchado: el menu se ve pero no responde al toque");
 
@@ -332,4 +358,14 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
     LOGI("entregando control a libemu32 (ANativeActivity_onCreate)");
     fn(activity, state, size);
     LOGI("libemu32 devolvio el control");
+    if (activity->callbacks) {
+        auto* cb = activity->callbacks;
+        LOGI("callbacks registrados: window=%d input=%d resume=%d focus=%d",
+             cb->onNativeWindowCreated != nullptr, cb->onInputQueueCreated != nullptr,
+             cb->onResume != nullptr, cb->onWindowFocusChanged != nullptr);
+        o_winCreated = cb->onNativeWindowCreated;   if (o_winCreated)   cb->onNativeWindowCreated = h_winCreated;
+        o_inputCreated = cb->onInputQueueCreated;   if (o_inputCreated) cb->onInputQueueCreated = h_inputCreated;
+        o_resume = cb->onResume;                    if (o_resume)       cb->onResume = h_resume;
+        o_focus = cb->onWindowFocusChanged;         if (o_focus)        cb->onWindowFocusChanged = h_focus;
+    }
 }

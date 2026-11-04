@@ -152,9 +152,9 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "400")).inputStream.bufferedReader().readText() }
                       catch (e: Exception) { "No pude leer el log: ${e.message}" }
-            val keys = listOf("GCORE", "AndroidRuntime", "FATAL", "UnsatisfiedLink", "emu32", "DEBUG", "libc")
-            val hit = raw.lines().filter { l -> keys.any { l.contains(it) } }.takeLast(70)
-            val out = if (hit.isNotEmpty()) hit.joinToString("\n") else raw.lines().takeLast(40).joinToString("\n")
+            val noise = listOf("Access denied finding property", "SetHeapTaggingLevel", "avc:", "audit(", "HWUI", "Choreographer")
+            val hit = raw.lines().filter { l -> l.isNotBlank() && noise.none { l.contains(it) } }.takeLast(130)
+            val out = hit.joinToString("\n")
             runOnUiThread { t.text = if (out.isBlank()) "(log vacio)" else out }
         }
     }
