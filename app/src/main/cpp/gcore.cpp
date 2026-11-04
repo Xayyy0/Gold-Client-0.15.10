@@ -274,6 +274,8 @@ static bool handleEvent(AInputEvent* e) {
 
 static int32_t (*o_getEvent)(AInputQueue*, AInputEvent**) = nullptr;
 static int32_t h_getEvent(AInputQueue* q, AInputEvent** out) {
+    static bool first = true;
+    if (first) { first = false; LOGI("primera lectura de eventos de entrada"); }
     for (;;) {
         int32_t r = o_getEvent(q, out);
         if (r < 0) return r;
@@ -293,6 +295,8 @@ static EGLBoolean h_swapBuffers(EGLDisplay d, EGLSurface s) {
     using clk = std::chrono::steady_clock;
     static int frames = 0; static int logTick = 0;
     static clk::time_point t0 = clk::now();
+    static bool firstSwap = true;
+    if (firstSwap) { firstSwap = false; LOGI("primer eglSwapBuffers: el juego esta dibujando"); }
     frames++;
     float dt = std::chrono::duration<float>(clk::now() - t0).count();
     if (dt >= 0.5f) {
@@ -325,5 +329,7 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
 
     auto fn = (void (*)(ANativeActivity*, void*, size_t))dlsym(emu, "ANativeActivity_onCreate");
     if (!fn) { LOGE("libemu32 no exporta ANativeActivity_onCreate"); return; }
+    LOGI("entregando control a libemu32 (ANativeActivity_onCreate)");
     fn(activity, state, size);
+    LOGI("libemu32 devolvio el control");
 }

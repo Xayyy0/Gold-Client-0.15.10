@@ -128,10 +128,35 @@ class MainActivity : AppCompatActivity() {
         small.addView(chip("Search") { toast("Search: próximamente") }, lp(-2, -2, 0f, dp(4)))
         small.addView(chip("Friends") { toast("Friends: próximamente") }, lp(-2, -2, 0f, dp(4)))
         small.addView(chip("Profiles") { toast("Profiles: próximamente") }, lp(-2, -2, 0f, dp(4)))
+        small.addView(chip("Log") { showLog() }, lp(-2, -2, 0f, dp(4)))
         v.addView(small, lp(-2, -2).apply { topMargin = dp(18) })
         v.addView(View(this), lp(1, 0, 1.2f))
         v.addView(tv("Gold Client Beta 1.0 · Minecraft PE 0.15.10", 10f, MUTED))
         swap(v)
+    }
+
+    // ---------- visor de log (para diagnosticar sin adb) ----------
+    private fun showLog() {
+        val v = vbox()
+        val top = hbox()
+        top.addView(chip("‹ Back") { showHome() }, lp(-2, -2, 0f, dp(2)))
+        val t = tv("Cargando...", 10f, Color.parseColor("#6FCF97")).apply { typeface = Typeface.MONOSPACE; setTextIsSelectable(true) }
+        top.addView(chip("Copiar") {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("gold-log", t.text))
+            toast("Log copiado")
+        }, lp(-2, -2, 0f, dp(2)))
+        v.addView(top)
+        v.addView(ScrollView(this).apply { addView(t) }, lp(-1, 0, 1f).apply { topMargin = dp(8) })
+        swap(v)
+        io.execute {
+            val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "400")).inputStream.bufferedReader().readText() }
+                      catch (e: Exception) { "No pude leer el log: ${e.message}" }
+            val keys = listOf("GCORE", "AndroidRuntime", "FATAL", "UnsatisfiedLink", "emu32", "DEBUG", "libc")
+            val hit = raw.lines().filter { l -> keys.any { l.contains(it) } }.takeLast(70)
+            val out = if (hit.isNotEmpty()) hit.joinToString("\n") else raw.lines().takeLast(40).joinToString("\n")
+            runOnUiThread { t.text = if (out.isBlank()) "(log vacio)" else out }
+        }
     }
 
     // ---------- lista de módulos ----------
