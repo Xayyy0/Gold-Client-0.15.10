@@ -355,7 +355,7 @@ static int32_t h_getEvent(AInputQueue* q, AInputEvent** out) {
 // en los menus casi ninguna. Contamos esas llamadas por fotograma y decidimos con histeresis.
 static std::atomic<int>  g_drawsFrame{0}, g_depthDrawsFrame{0};
 static std::atomic<bool> g_depthOn{false};
-static const int WORLD_DEPTH_DRAWS = 40;
+static const int WORLD_DEPTH_DRAWS = 32;
 
 static void (*o_glEnable)(GLenum) = nullptr;
 static void h_glEnable(GLenum cap) { if (cap == 0x0B71) g_depthOn.store(true, std::memory_order_relaxed); o_glEnable(cap); }

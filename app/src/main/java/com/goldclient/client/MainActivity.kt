@@ -233,15 +233,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------- skin con cosmeticos ----------
-    private fun skinDir(): File {
-        try {
-            val ai = packageManager.getApplicationInfo(GameHost.MC_PKG, 0)
-            val l = dalvik.system.DexClassLoader(ai.sourceDir, codeCacheDir.absolutePath, null, classLoader)
-            val m = l.loadClass("com.emu32.Skin").getMethod("pastaSkins", android.app.Activity::class.java)
-            (m.invoke(null, this) as? File)?.let { return it }
-        } catch (_: Exception) {}
-        return File(AssetManager2.workDir(this), "skins")
-    }
+    // carpeta donde el juego lee custom.png (confirmado en el Log: games/com.mojang/minecraftpe/custom.png)
+    private fun skinDir(): File = File(android.os.Environment.getExternalStorageDirectory(), "games/com.mojang/minecraftpe")
     private fun baseSkin(): Bitmap {
         val f = File(AssetManager2.workDir(this), "gold_skin_base.png")
         if (!f.exists()) {
