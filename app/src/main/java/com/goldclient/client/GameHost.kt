@@ -21,15 +21,41 @@ object GameHost {
         val stamp = try { pm.getPackageInfo(MC_PKG, 0).lastUpdateTime } catch (e: Exception) { 0L }
         val prefs = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE)
         val out = emuFile(ctx)
-        if (out.exists() && prefs.getLong("emu_stamp", -1L) == stamp) return null
-
         val sources = ArrayList<String>()
         sources.add(ai.sourceDir)
         ai.splitSourceDirs?.let { sources.addAll(it) }
+
+        if (out.exists() && prefs.getLong("emu_stamp", -1L) == stamp) { syncGuest(ctx, sources, stamp); return null }
         for (p in sources) {
-            if (extract(p, out)) { prefs.edit().putLong("emu_stamp", stamp).apply(); return null }
+            if (extract(p, out)) { prefs.edit().putLong("emu_stamp", stamp).apply(); syncGuest(ctx, sources, stamp); return null }
         }
         return "Este Minecraft no trae libemu32 (arm64-v8a). Necesitas el APK de 64 bits con emulador."
+    }
+
+    /**
+     * Experimento: copia las 3 librerias del juego de 32 bits a <filesDir>/jogo32 (copia privada del launcher; el Minecraft
+     * instalado no se toca). Solo si el modo de prueba esta activado; apagado, borra la carpeta y todo queda como siempre.
+     */
+    fun guestStage(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_stage", false)
+    fun setGuestStage(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_stage", on).apply()
+
+    private fun syncGuest(ctx: Context, sources: List<String>, stamp: Long) {
+        val prefs = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE)
+        val dir = File(ctx.filesDir, "jogo32")
+        if (!guestStage(ctx)) { if (dir.exists()) dir.deleteRecursively(); prefs.edit().remove("guest_stamp").apply(); return }
+        if (dir.exists() && prefs.getLong("guest_stamp", -1L) == stamp) return
+        dir.deleteRecursively(); dir.mkdirs()
+        for (p in sources) {
+            try {
+                ZipFile(p).use { z ->
+                    for (n in listOf("libminecraftpe.so", "libfmod.so", "libgnustl_shared.so")) {
+                        val e = z.getEntry("assets/jogo32/$n") ?: continue
+                        z.getInputStream(e).use { i -> FileOutputStream(File(dir, n)).use { o -> i.copyTo(o) } }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        prefs.edit().putLong("guest_stamp", stamp).apply()
     }
 
     private fun extract(zipPath: String, out: File): Boolean {

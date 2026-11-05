@@ -1,6 +1,8 @@
 package com.goldclient.client
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -39,9 +41,9 @@ class MainActivity : AppCompatActivity() {
     private val wardrobe = linkedMapOf(
         "Capes" to listOf(Item("None", 0), Item("Classic", 0), Item("Royal", 400), Item("Dragon", 400), Item("Samurai", 480), Item("Phoenix", 1100)),
         "Wings" to listOf(Item("None", 0), Item("Angel", 600), Item("Dragon", 800)),
-        "Trails" to listOf(Item("None", 0), Item("Fire", 300), Item("Rainbow", 500), Item("Rings", 500)),
+        "Trails" to emptyList<Item>(),
         "Hat" to listOf(Item("None", 0), Item("Halo", 350), Item("Crown", 700), Item("Ears", 250)),
-        "Mace" to emptyList(), "Emotes" to emptyList(), "Badges" to emptyList()
+        "Mace" to emptyList<Item>(), "Emotes" to emptyList<Item>(), "Badges" to emptyList<Item>()
     )
 
     private val io = Executors.newSingleThreadExecutor()
@@ -230,6 +232,48 @@ class MainActivity : AppCompatActivity() {
         d.layoutParams = FrameLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
     }
 
+    // ---------- skin con cosmeticos ----------
+    private fun skinDir(): File {
+        try {
+            val ai = packageManager.getApplicationInfo(GameHost.MC_PKG, 0)
+            val l = dalvik.system.DexClassLoader(ai.sourceDir, codeCacheDir.absolutePath, null, classLoader)
+            val m = l.loadClass("com.emu32.Skin").getMethod("pastaSkins", android.app.Activity::class.java)
+            (m.invoke(null, this) as? File)?.let { return it }
+        } catch (_: Exception) {}
+        return File(AssetManager2.workDir(this), "skins")
+    }
+    private fun baseSkin(): Bitmap {
+        val f = File(AssetManager2.workDir(this), "gold_skin_base.png")
+        if (!f.exists()) {
+            val src: java.io.InputStream? = try {
+                val cur = File(skinDir(), "custom.png")
+                if (cur.exists()) cur.inputStream()
+                else createPackageContext(GameHost.MC_PKG, android.content.Context.CONTEXT_IGNORE_SECURITY).assets.open("skins/Base/steve.png")
+            } catch (_: Exception) { null }
+            if (src != null) src.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+        }
+        return BitmapFactory.decodeFile(f.path)?.copy(Bitmap.Config.ARGB_8888, false)
+            ?: Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+    }
+    private fun previewPair(cat: String, sel: String?): Pair<Bitmap, Bitmap> {
+        val eq = HashMap<String, String>()
+        wardrobe.keys.forEach { eq[it] = equipped(it) }
+        if (sel != null) eq[cat] = sel
+        val skin = Cosmetics.compose(baseSkin(), eq)
+        return Pair(Cosmetics.view(skin, false), Cosmetics.view(skin, true))
+    }
+    private fun applySkin() = io.execute {
+        try {
+            val eq = HashMap<String, String>()
+            wardrobe.keys.forEach { eq[it] = equipped(it) }
+            val out = Cosmetics.compose(baseSkin(), eq)
+            val dir = skinDir(); dir.mkdirs()
+            val f = File(dir, "custom.png")
+            java.io.FileOutputStream(f).use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            runOnUiThread { toast("Skin guardada: ${f.path}") }
+        } catch (e: Exception) { runOnUiThread { toast("No pude guardar la skin: ${e.message}") } }
+    }
+
     // ---------- estilo de vidrio compartido por las pantallas ----------
     private val GOLDC = Color.parseColor("#F5B700")
     private fun dsc() = resources.displayMetrics.widthPixels / Spec.DW
@@ -267,11 +311,18 @@ class MainActivity : AppCompatActivity() {
         val ds = dsc()
         val v = vbox()
         val t = ptv("Cargando...", 20f * ds, Color.parseColor("#6FCF97")).apply { setTextIsSelectable(true) }
-        v.addView(topBar(glassChip("Copiar") {
+        val right = hbox()
+        right.addView(glassChip("jogo32: ${if (GameHost.guestStage(this)) "ON" else "OFF"}") {
+            GameHost.setGuestStage(this, !GameHost.guestStage(this))
+            toast("Modo de prueba jogo32 " + (if (GameHost.guestStage(this)) "ON" else "OFF") + ": se aplica al pulsar LAUNCH")
+            showLog()
+        }, lp(-2, -2, 0f, dp(3)))
+        right.addView(glassChip("Copiar") {
             val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("gold-log", t.text))
             toast("Log copiado")
-        }))
+        }, lp(-2, -2, 0f, dp(3)))
+        v.addView(topBar(right))
         v.addView(titleRow("Log", null))
         val box = vbox().apply { background = panel(); setPadding(dp(12), dp(12), dp(12), dp(12)) }
         box.addView(t)
@@ -339,18 +390,25 @@ class MainActivity : AppCompatActivity() {
         if (chosen == null) {
             prev.addView(ptv("Próximamente", 30f * ds, Color.parseColor("#9A9AA5")))
         } else {
+            try {
+                val (fr, bk) = previewPair(cat, chosen.name)
+                val pr = hbox().apply { gravity = Gravity.CENTER }
+                pr.addView(ImageView(this).apply { setImageBitmap(fr) }, lp(dp(84), dp(168), 0f, dp(6)))
+                pr.addView(ImageView(this).apply { setImageBitmap(bk) }, lp(dp(84), dp(168), 0f, dp(6)))
+                prev.addView(pr)
+            } catch (_: Exception) {}
             val have = chosen.price == 0 || owned(cat, chosen.name)
             val isEq = equipped(cat) == chosen.name
             prev.addView(ptv(chosen.name, 46f * ds, Color.WHITE, true))
             prev.addView(ptv(if (isEq) "Equipped" else if (have) "Owned" else "◆ ${chosen.price}", 24f * ds, if (have) GOLDC else Color.parseColor("#9A9AA5"))
                 .apply { setPadding(0, dp(4), 0, dp(10)) })
             prev.addView(glassChip(if (isEq) "Equipped" else if (have) "Equip" else "Buy  ◆ ${chosen.price}", !isEq) {
-                if (have) { prefs.edit().putString("e_$cat", chosen.name).apply(); writeCfg() }
+                if (have) { prefs.edit().putString("e_$cat", chosen.name).apply(); writeCfg(); applySkin() }
                 else if (shards() >= chosen.price) prefs.edit().putInt("shards", shards() - chosen.price).putBoolean("o_${cat}_${chosen.name}", true).apply()
                 else toast("Shards insuficientes")
                 showWardrobe(tab, cat, chosen.name)
             })
-            prev.addView(ptv("Vista previa 3D: fase 4", 18f * ds, Color.parseColor("#6E6E78")).apply { setPadding(0, dp(10), 0, 0) })
+            prev.addView(ptv("Frente y espalda · se aplica a tu skin personalizada", 18f * ds, Color.parseColor("#6E6E78")).apply { setPadding(0, dp(10), 0, 0) })
         }
         v.addView(prev, lp(-1, -2).apply { topMargin = dp(10); bottomMargin = dp(10) })
 

@@ -40,6 +40,7 @@ class GameActivity : NativeActivity() {
         } catch (e: Exception) {
             Log.e("GCORE", "No pude preparar Minecraft: ${e.message}")
         }
+        Log.i("GCORE", "jogo32 (copia privada): " + (java.io.File(filesDir, "jogo32").list()?.joinToString() ?: "no existe"))
         super.onCreate(savedInstanceState)
     }
 

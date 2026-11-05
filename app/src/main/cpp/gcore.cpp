@@ -48,6 +48,7 @@ static std::atomic<bool>  g_open{false};
 static std::atomic<int>   g_cat{0};
 static std::atomic<int>   g_W{0}, g_H{0};
 static std::atomic<float> g_fps{0.f};
+static std::atomic<bool>  g_inWorld{false};   // true cuando se esta dentro de un mundo/servidor
 
 // ======================= GOT patch =======================
 struct HookDef { const char* name; void* repl; void** orig; int hits; };
@@ -247,8 +248,9 @@ static void drawAll(EGLDisplay dpy, EGLSurface surf) {
     glEnable(GL_SCISSOR_TEST);
 
     Lay l = lay();
-    if (g_on[IDX_FPS]) drawFps(l.sc);
-    if (g_on[IDX_CPS]) {
+    bool world = g_inWorld;
+    if (world && g_on[IDX_FPS]) drawFps(l.sc);
+    if (world && g_on[IDX_CPS]) {
         char b[24]; snprintf(b, sizeof(b), "CPS %d", computeCps());
         int cy = g_on[IDX_FPS] ? 14 * l.sc : 3 * l.sc;
         color(0.f, 0.f, 0.f);  rectTL(2 * l.sc, cy - l.sc, textW(b, l.sc) + 2 * l.sc, FONT_H * l.sc + 2 * l.sc);
@@ -347,6 +349,42 @@ static int32_t h_getEvent(AInputQueue* q, AInputEvent** out) {
     }
 }
 
+
+// ======================= Deteccion: dentro de un mundo =======================
+// Dentro de un mundo el juego dibuja cientos de llamadas con la prueba de profundidad activada (chunks);
+// en los menus casi ninguna. Contamos esas llamadas por fotograma y decidimos con histeresis.
+static std::atomic<int>  g_drawsFrame{0}, g_depthDrawsFrame{0};
+static std::atomic<bool> g_depthOn{false};
+static const int WORLD_DEPTH_DRAWS = 40;
+
+static void (*o_glEnable)(GLenum) = nullptr;
+static void h_glEnable(GLenum cap) { if (cap == 0x0B71) g_depthOn.store(true, std::memory_order_relaxed); o_glEnable(cap); }
+static void (*o_glDisable)(GLenum) = nullptr;
+static void h_glDisable(GLenum cap) { if (cap == 0x0B71) g_depthOn.store(false, std::memory_order_relaxed); o_glDisable(cap); }
+static void (*o_drawArrays)(GLenum, GLint, GLsizei) = nullptr;
+static void h_drawArrays(GLenum m, GLint f, GLsizei n) {
+    g_drawsFrame.fetch_add(1, std::memory_order_relaxed);
+    if (g_depthOn.load(std::memory_order_relaxed)) g_depthDrawsFrame.fetch_add(1, std::memory_order_relaxed);
+    o_drawArrays(m, f, n);
+}
+static void (*o_drawElements)(GLenum, GLsizei, GLenum, const void*) = nullptr;
+static void h_drawElements(GLenum m, GLsizei n, GLenum t, const void* i) {
+    g_drawsFrame.fetch_add(1, std::memory_order_relaxed);
+    if (g_depthOn.load(std::memory_order_relaxed)) g_depthDrawsFrame.fetch_add(1, std::memory_order_relaxed);
+    o_drawElements(m, n, t, i);
+}
+static void updateWorldState() {
+    int tot = g_drawsFrame.exchange(0), dd = g_depthDrawsFrame.exchange(0);
+    if (!o_drawArrays && !o_drawElements) { g_inWorld = true; return; }   // sin enganche: mostrar siempre
+    static int up = 0, down = 0;
+    static int64_t lastLog = 0;
+    if (dd >= WORLD_DEPTH_DRAWS) { up++; down = 0; } else { down++; up = 0; }
+    if (!g_inWorld && up >= 15) { g_inWorld = true; LOGI("dentro de un mundo (draws=%d profundidad=%d)", tot, dd); }
+    else if (g_inWorld && down >= 30) { g_inWorld = false; LOGI("fuera del mundo (draws=%d profundidad=%d)", tot, dd); }
+    int64_t now = nowMs();
+    if (now - lastLog > 4000) { lastLog = now; LOGI("calibracion: draws=%d profundidad=%d enMundo=%d", tot, dd, (int)g_inWorld.load()); }
+}
+
 // ======================= Hooks EGL =======================
 static EGLBoolean (*o_swapInterval)(EGLDisplay, EGLint) = nullptr;
 static EGLBoolean (*o_swapBuffers)(EGLDisplay, EGLSurface) = nullptr;
@@ -366,6 +404,7 @@ static EGLBoolean h_swapBuffers(EGLDisplay d, EGLSurface s) {
         g_fps = frames / dt; frames = 0; t0 = clk::now();
         if (++logTick % 4 == 0) LOGI("FPS %.1f", g_fps.load());
     }
+    updateWorldState();
     drawAll(d, s);
     return o_swapBuffers(d, s);
 }
@@ -467,8 +506,12 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* state, size_t siz
         {"open",                (void*)h_open,         (void**)&o_open,         0},
         {"__android_log_print", (void*)h_logPrint,     (void**)&o_logPrint,     0},
         {"__android_log_write", (void*)h_logWrite,     (void**)&o_logWrite,     0},
+        {"glEnable",            (void*)h_glEnable,     (void**)&o_glEnable,     0},
+        {"glDisable",           (void*)h_glDisable,    (void**)&o_glDisable,    0},
+        {"glDrawArrays",        (void*)h_drawArrays,   (void**)&o_drawArrays,   0},
+        {"glDrawElements",      (void*)h_drawElements, (void**)&o_drawElements, 0},
     };
-    patchGot("libemu32.so", hooks, 10);
+    patchGot("libemu32.so", hooks, 14);
     if (!o_swapBuffers) LOGE("eglSwapBuffers no enganchado: sin overlay");
     if (!o_getEvent)    LOGE("AInputQueue_getEvent no enganchado: el menu se ve pero no responde al toque");
 
