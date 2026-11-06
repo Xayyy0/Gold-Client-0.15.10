@@ -305,18 +305,25 @@ class MainActivity : AppCompatActivity() {
         val v = vbox()
         val t = ptv("Cargando...", 20f * ds, Color.parseColor("#6FCF97")).apply { setTextIsSelectable(true) }
         val right = hbox()
-        right.addView(glassChip("jogo32: ${if (GameHost.guestStage(this)) "ON" else "OFF"}") {
-            GameHost.setGuestStage(this, !GameHost.guestStage(this))
-            toast("Modo de prueba jogo32 " + (if (GameHost.guestStage(this)) "ON" else "OFF") + ": se aplica al pulsar LAUNCH")
-            showLog()
-        }, lp(-2, -2, 0f, dp(3)))
         right.addView(glassChip("Copiar") {
             val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("gold-log", t.text))
             toast("Log copiado")
         }, lp(-2, -2, 0f, dp(3)))
+        val tests = hbox()
+        tests.addView(glassChip("jogo32: ${if (GameHost.guestStage(this)) "ON" else "OFF"}", GameHost.guestStage(this)) {
+            GameHost.setGuestStage(this, !GameHost.guestStage(this))
+            toast("jogo32 " + (if (GameHost.guestStage(this)) "ON" else "OFF") + ": se aplica al pulsar LAUNCH")
+            showLog()
+        }, lp(-2, -2, 0f, dp(3)))
+        tests.addView(glassChip("parche: ${if (GameHost.guestPatch(this)) "ON" else "OFF"}", GameHost.guestPatch(this)) {
+            GameHost.setGuestPatch(this, !GameHost.guestPatch(this))
+            toast("parche " + (if (GameHost.guestPatch(this)) "ON" else "OFF") + ": solo actua con jogo32 ON")
+            showLog()
+        }, lp(-2, -2, 0f, dp(3)))
         v.addView(topBar(right))
         v.addView(titleRow("Log", null))
+        v.addView(tests, lp(-2, -2).apply { bottomMargin = dp(8) })
         val box = vbox().apply { background = panel(); setPadding(dp(12), dp(12), dp(12), dp(12)) }
         box.addView(t)
         v.addView(ScrollView(this).apply { addView(box) }, lp(-1, 0, 1f))

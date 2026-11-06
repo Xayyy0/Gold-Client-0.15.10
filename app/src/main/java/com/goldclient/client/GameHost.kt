@@ -39,23 +39,40 @@ object GameHost {
     fun guestStage(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_stage", false)
     fun setGuestStage(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_stage", on).apply()
 
+    /** Prueba: añade unos bytes al final de la copia de libminecraftpe.so (no afectan al programa) para ver si el emulador la acepta modificada. */
+    fun guestPatch(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_patch", false)
+    fun setGuestPatch(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_patch", on).apply()
+
+    private const val MARK = "GOLD-PATCH-TEST\n"
+    fun isPatched(ctx: Context): Boolean {
+        val so = File(File(ctx.filesDir, "jogo32"), "libminecraftpe.so")
+        val m = MARK.toByteArray()
+        if (!so.exists() || so.length() < m.size) return false
+        return try {
+            java.io.RandomAccessFile(so, "r").use { f ->
+                f.seek(so.length() - m.size); val b = ByteArray(m.size); f.readFully(b); b.contentEquals(m)
+            }
+        } catch (_: Exception) { false }
+    }
+
+    /**
+     * El emulador extrae el juego de 32 bits del APK a <filesDir>/jogo32 por su cuenta y deja un .crc junto a cada libreria;
+     * si falta el .crc, vuelve a extraer y pisa lo que haya. Por eso aqui NO copiamos nada: esperamos a que exista el .crc
+     * (despues de un primer arranque) y solo entonces aplicamos o quitamos el parche de prueba sin tocar el .crc.
+     */
     private fun syncGuest(ctx: Context, sources: List<String>, stamp: Long) {
-        val prefs = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE)
         val dir = File(ctx.filesDir, "jogo32")
-        if (!guestStage(ctx)) { if (dir.exists()) dir.deleteRecursively(); prefs.edit().remove("guest_stamp").apply(); return }
-        if (dir.exists() && prefs.getLong("guest_stamp", -1L) == stamp) return
-        dir.deleteRecursively(); dir.mkdirs()
-        for (p in sources) {
-            try {
-                ZipFile(p).use { z ->
-                    for (n in listOf("libminecraftpe.so", "libfmod.so", "libgnustl_shared.so")) {
-                        val e = z.getEntry("assets/jogo32/$n") ?: continue
-                        z.getInputStream(e).use { i -> FileOutputStream(File(dir, n)).use { o -> i.copyTo(o) } }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        prefs.edit().putLong("guest_stamp", stamp).apply()
+        if (!guestStage(ctx)) { if (dir.exists()) dir.deleteRecursively(); return }
+        val so = File(dir, "libminecraftpe.so")
+        if (!so.exists() || !File(dir, "libminecraftpe.so.crc").exists()) return
+        val patched = isPatched(ctx)
+        try {
+            if (guestPatch(ctx) && !patched) {
+                FileOutputStream(so, true).use { it.write(MARK.toByteArray()) }
+            } else if (!guestPatch(ctx) && patched) {
+                java.io.RandomAccessFile(so, "rw").use { it.setLength(so.length() - MARK.toByteArray().size) }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun extract(zipPath: String, out: File): Boolean {

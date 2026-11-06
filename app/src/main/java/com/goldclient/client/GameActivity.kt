@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.AssetManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import dalvik.system.DexClassLoader
 
@@ -40,7 +42,11 @@ class GameActivity : NativeActivity() {
         } catch (e: Exception) {
             Log.e("GCORE", "No pude preparar Minecraft: ${e.message}")
         }
-        Log.i("GCORE", "jogo32 (copia privada): " + (java.io.File(filesDir, "jogo32").list()?.joinToString() ?: "no existe"))
+        val g = java.io.File(filesDir, "jogo32")
+        fun sizes() = g.listFiles()?.sortedBy { it.name }?.joinToString { "${it.name}=${it.length()}" } ?: "no existe"
+        val apkSize = try { java.util.zip.ZipFile(mcApk ?: "").use { it.getEntry("assets/jogo32/libminecraftpe.so")?.size } } catch (e: Exception) { null }
+        Log.i("GCORE", "libminecraftpe.so en el APK=$apkSize · jogo32 al abrir: ${sizes()} · parche=${GameHost.guestPatch(this)} aplicado=${GameHost.isPatched(this)}")
+        Handler(Looper.getMainLooper()).postDelayed({ Log.i("GCORE", "jogo32 a los 8 s: ${sizes()} aplicado=${GameHost.isPatched(this)}") }, 8000)
         super.onCreate(savedInstanceState)
     }
 
