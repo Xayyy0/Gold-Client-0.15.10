@@ -41,7 +41,7 @@ static const ModDef MODS[] = {
     {"FPS Uncap", 4}, {"Fast Math", 4}, {"Chunk Optimizer", 4}, {"RAM Cleaner", 4},      // 17..
 };
 static const int NMOD = (int)(sizeof(MODS) / sizeof(MODS[0]));
-static const int IDX_FPS = 6, IDX_UNCAP = 17, IDX_CPS = 1;    // modulos ya conectados
+static const int IDX_FPS = 6, IDX_UNCAP = 17, IDX_CPS = 1, IDX_KEYS = 0;    // modulos ya conectados
 static std::atomic<bool> g_on[32];
 
 static std::atomic<bool>  g_open{false};
@@ -127,7 +127,11 @@ static void saveCfg() {
 }
 static int64_t nowMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static int64_t g_taps[32]; static std::atomic<int> g_tapN{0};
-static void registerTap() { g_taps[g_tapN++ & 31] = nowMs(); }
+// dedos que estan tocando ahora (posicion de inicio y actual): lo usan el CPS y KeyStrokes
+struct Touch { bool on; float x, y, cx, cy; int64_t t; };
+static Touch g_t[16];
+static int64_t g_lastTap = 0;
+static void registerTap() { g_lastTap = nowMs(); g_taps[g_tapN++ & 31] = g_lastTap; }
 static int computeCps() { int64_t t = nowMs(); int c = 0; for (int i = 0; i < 32; i++) if (g_taps[i] > 0 && t - g_taps[i] <= 1000) c++; return c; }
 
 // ======================= Dibujo (scissor + glClear, sin shaders) =======================
@@ -193,6 +197,38 @@ static Lay lay() {
     return l;
 }
 
+
+// ======================= KeyStrokes =======================
+// En el movil no hay teclas: se ilumina la tecla cuando hay un dedo sobre el boton de la cruceta del juego
+// (posiciones tomadas del paquete de texturas del usuario, como fraccion de la pantalla) y ATK al dar un golpe.
+static bool fingerIn(float fx0, float fx1, float fy0, float fy1) {
+    float W = (float)g_W, H = (float)g_H;
+    for (auto& t : g_t) if (t.on && t.cx >= fx0 * W && t.cx < fx1 * W && t.cy >= fy0 * H && t.cy < fy1 * H) return true;
+    return false;
+}
+static void drawKey(int x, int y, int w, int h, const char* label, bool on, int sc) {
+    color(on ? 0.96f : 0.30f, on ? 0.72f : 0.30f, on ? 0.f : 0.34f);   rectTL(x, y, w, h);
+    color(on ? 0.96f : 0.09f, on ? 0.72f : 0.09f, on ? 0.f : 0.11f);   rectTL(x + sc, y + sc, w - 2 * sc, h - 2 * sc);
+    if (on) color(0.05f, 0.05f, 0.05f); else color(0.93f, 0.93f, 0.93f);
+    text(label, x + (w - textW(label, sc)) / 2, y + (h - FONT_H * sc) / 2, sc);
+}
+static void drawKeys(int sc) {
+    int key = 18 * sc, gap = 2 * sc, x0 = 3 * sc, y0 = 32 * sc;
+    bool w = fingerIn(0.090f, 0.166f, 0.52f, 0.69f);
+    bool a = fingerIn(0.015f, 0.088f, 0.69f, 0.85f);
+    bool s = fingerIn(0.090f, 0.166f, 0.855f, 1.0f);
+    bool d = fingerIn(0.168f, 0.245f, 0.69f, 0.85f);
+    bool j = fingerIn(0.090f, 0.166f, 0.69f, 0.85f);
+    bool atk = nowMs() - g_lastTap < 120;
+    drawKey(x0 + key + gap, y0, key, key, "W", w, sc);
+    drawKey(x0, y0 + key + gap, key, key, "A", a, sc);
+    drawKey(x0 + key + gap, y0 + key + gap, key, key, "S", s, sc);
+    drawKey(x0 + 2 * (key + gap), y0 + key + gap, key, key, "D", d, sc);
+    int wide = (3 * key + 2 * gap - gap) / 2, ry = y0 + 2 * (key + gap);
+    drawKey(x0, ry, wide, 14 * sc, "ATK", atk, sc);
+    drawKey(x0 + wide + gap, ry, wide, 14 * sc, "JUMP", j, sc);
+}
+
 static void drawButton(const Lay& l) {
     color(0.96f, 0.72f, 0.f);  rectTL(l.bx - l.sc, l.by - l.sc, l.bs + 2 * l.sc, l.bs + 2 * l.sc);
     color(0.07f, 0.07f, 0.09f); rectTL(l.bx, l.by, l.bs, l.bs);
@@ -225,7 +261,7 @@ static void drawMenu(const Lay& l) {
         if (on) color(0.96f, 0.72f, 0.f); else color(0.27f, 0.27f, 0.3f);
         rectTL(tx, ty, tw, th);
         color(1.f, 1.f, 1.f); rectTL(on ? tx + tw - th + sc : tx + sc, ty + sc, th - 2 * sc, th - 2 * sc);
-        if (i != IDX_FPS && i != IDX_UNCAP && i != IDX_CPS) { color(0.4f, 0.4f, 0.45f); text("soon", tx - textW("soon", sc) - pad, y + (l.rowH - FONT_H * sc) / 2, sc); }
+        if (i != IDX_FPS && i != IDX_UNCAP && i != IDX_CPS && i != IDX_KEYS) { color(0.4f, 0.4f, 0.45f); text("soon", tx - textW("soon", sc) - pad, y + (l.rowH - FONT_H * sc) / 2, sc); }
     }
 }
 
@@ -256,6 +292,7 @@ static void drawAll(EGLDisplay dpy, EGLSurface surf) {
         color(0.f, 0.f, 0.f);  rectTL(2 * l.sc, cy - l.sc, textW(b, l.sc) + 2 * l.sc, FONT_H * l.sc + 2 * l.sc);
         color(0.3f, 1.f, 0.4f); text(b, 3 * l.sc, cy, l.sc);
     }
+    if (world && g_on[IDX_KEYS]) drawKeys(l.sc);
     drawButton(l);
     if (g_open) drawMenu(l);
 
@@ -292,8 +329,6 @@ static bool onTouchDown(float x, float y) {      // true = el menu consume el to
 static bool g_grab = false; static int32_t g_grabId = -1;
 
 // ----- CPS: solo cuenta golpes (toques cortos en el mundo), no botones ni arrastres de camara -----
-struct Touch { bool on; float x, y; int64_t t; };
-static Touch g_t[16];
 // zonas de controles en pantalla (cruceta, hotbar, botones de las esquinas): un toque ahi no es un golpe
 static bool inControlZone(float x, float y) {
     float W = (float)g_W, H = (float)g_H;
@@ -309,13 +344,20 @@ static bool handleEvent(AInputEvent* e) {
     int32_t a = AMotionEvent_getAction(e);
     int act = a & AMOTION_EVENT_ACTION_MASK;
     int idx = (a & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+    if (act == AMOTION_EVENT_ACTION_MOVE && !g_open) {      // posicion actual de cada dedo (para KeyStrokes)
+        int n = (int)AMotionEvent_getPointerCount(e);
+        for (int i = 0; i < n; i++) {
+            int pid = AMotionEvent_getPointerId(e, i);
+            if (pid >= 0 && pid < 16 && g_t[pid].on) { g_t[pid].cx = AMotionEvent_getX(e, i); g_t[pid].cy = AMotionEvent_getY(e, i); }
+        }
+    }
     if (act == AMOTION_EVENT_ACTION_DOWN || act == AMOTION_EVENT_ACTION_POINTER_DOWN) {
         float x = AMotionEvent_getX(e, idx), y = AMotionEvent_getY(e, idx);
         if (onTouchDown(x, y)) {
             g_grab = true; g_grabId = AMotionEvent_getPointerId(e, idx); return true;
         }
         int pid = AMotionEvent_getPointerId(e, idx);
-        if (!g_open && pid >= 0 && pid < 16) g_t[pid] = Touch{true, x, y, nowMs()};
+        if (!g_open && pid >= 0 && pid < 16) g_t[pid] = Touch{true, x, y, x, y, nowMs()};
         return g_open;
     }
     if (act == AMOTION_EVENT_ACTION_UP || act == AMOTION_EVENT_ACTION_POINTER_UP || act == AMOTION_EVENT_ACTION_CANCEL) {

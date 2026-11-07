@@ -340,7 +340,7 @@ class MainActivity : AppCompatActivity() {
     private fun showCategory(name: String) {
         val ds = dsc()
         val ids = mapOf("PvP" to "ic_pvp", "HUD" to "ic_hud", "Visuals" to "ic_visuals", "Player" to "ic_player", "Misc" to "ic_misc")
-        val working = setOf("FPS Counter", "FPS Uncap", "CPS Counter")
+        val working = setOf("FPS Counter", "FPS Uncap", "CPS Counter", "KeyStrokes")
         val v = vbox()
         v.addView(topBar())
         v.addView(titleRow(name, ids[name]))

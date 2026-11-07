@@ -8,6 +8,8 @@
     <queries><package android:name="com.mojang.minecraftpe" /></queries>
     <application
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Gold Client"
         android:requestLegacyExternalStorage="true"
         android:extractNativeLibs="true"
