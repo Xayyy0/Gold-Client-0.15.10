@@ -198,6 +198,66 @@ static Lay lay() {
 }
 
 
+
+// ======================= Dibujo con transparencia (shader minimo) =======================
+// glClear no mezcla colores, asi que lo translucido (KeyStrokes) se dibuja con un shader plano y blending.
+// Se guarda y restaura todo el estado GL que tocamos para no alterar al juego.
+static GLuint g_prog = 0; static GLint g_uScale = -1, g_uColor = -1; static bool g_quadFail = false;
+static GLuint compileSh(GLenum type, const char* src) {
+    GLuint sh = glCreateShader(type); glShaderSource(sh, 1, &src, nullptr); glCompileShader(sh);
+    GLint ok = 0; glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) { char b[256] = {0}; glGetShaderInfoLog(sh, 255, nullptr, b); LOGE("shader: %s", b); glDeleteShader(sh); return 0; }
+    return sh;
+}
+static bool initQuad() {
+    if (g_prog) return true;
+    if (g_quadFail) return false;
+    GLuint vs = compileSh(GL_VERTEX_SHADER, "attribute vec2 p; uniform vec2 s; void main(){ gl_Position = vec4(p.x*s.x-1.0, 1.0-p.y*s.y, 0.0, 1.0); }");
+    GLuint fs = compileSh(GL_FRAGMENT_SHADER, "precision mediump float; uniform vec4 c; void main(){ gl_FragColor = c; }");
+    if (!vs || !fs) { g_quadFail = true; return false; }
+    GLuint pr = glCreateProgram(); glAttachShader(pr, vs); glAttachShader(pr, fs);
+    glBindAttribLocation(pr, 7, "p"); glLinkProgram(pr);
+    GLint ok = 0; glGetProgramiv(pr, GL_LINK_STATUS, &ok);
+    if (!ok) { char b[256] = {0}; glGetProgramInfoLog(pr, 255, nullptr, b); LOGE("programa: %s", b); g_quadFail = true; return false; }
+    g_uScale = glGetUniformLocation(pr, "s"); g_uColor = glGetUniformLocation(pr, "c");
+    g_prog = pr; LOGI("shader de transparencia listo");
+    return true;
+}
+struct QuadState { GLint prog, arrBuf, vp[4], sRGB, dRGB, sA, dA, eRGB, eA; GLboolean blend, depth, cull, stencil, scissor; GLint attr7; };
+static void quadBegin(QuadState& q) {
+    glGetIntegerv(GL_CURRENT_PROGRAM, &q.prog); glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &q.arrBuf); glGetIntegerv(GL_VIEWPORT, q.vp);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &q.sRGB); glGetIntegerv(GL_BLEND_DST_RGB, &q.dRGB);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &q.sA); glGetIntegerv(GL_BLEND_DST_ALPHA, &q.dA);
+    glGetIntegerv(GL_BLEND_EQUATION_RGB, &q.eRGB); glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &q.eA);
+    q.blend = glIsEnabled(GL_BLEND); q.depth = glIsEnabled(GL_DEPTH_TEST); q.cull = glIsEnabled(GL_CULL_FACE);
+    q.stencil = glIsEnabled(GL_STENCIL_TEST); q.scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glGetVertexAttribiv(7, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &q.attr7);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_STENCIL_TEST); glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND); glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glViewport(0, 0, g_W, g_H);
+    glUseProgram(g_prog); glUniform2f(g_uScale, 2.f / (float)g_W, 2.f / (float)g_H);
+    glBindBuffer(GL_ARRAY_BUFFER, 0); glEnableVertexAttribArray(7);
+}
+static void quadEnd(const QuadState& q) {
+    if (!q.attr7) glDisableVertexAttribArray(7);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)q.arrBuf); glUseProgram((GLuint)q.prog);
+    glViewport(q.vp[0], q.vp[1], q.vp[2], q.vp[3]);
+    glBlendEquationSeparate((GLenum)q.eRGB, (GLenum)q.eA); glBlendFuncSeparate((GLenum)q.sRGB, (GLenum)q.dRGB, (GLenum)q.sA, (GLenum)q.dA);
+    if (!q.blend) glDisable(GL_BLEND);
+    if (q.depth) glEnable(GL_DEPTH_TEST);
+    if (q.cull) glEnable(GL_CULL_FACE);
+    if (q.stencil) glEnable(GL_STENCIL_TEST);
+    if (q.scissor) glEnable(GL_SCISSOR_TEST);
+}
+// rectangulo translucido en coordenadas TL (arriba-izquierda); solo dentro de quadBegin/quadEnd
+static void quad(int x, int y, int w, int h, float r, float g, float b, float a) {
+    float v[8] = {(float)x, (float)y, (float)(x + w), (float)y, (float)x, (float)(y + h), (float)(x + w), (float)(y + h)};
+    glUniform4f(g_uColor, r, g, b, a);
+    glVertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, 0, v);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
 // ======================= KeyStrokes =======================
 // En el movil no hay teclas: se ilumina la tecla cuando hay un dedo sobre el boton de la cruceta del juego
 // (posiciones tomadas del paquete de texturas del usuario, como fraccion de la pantalla) y ATK al dar un golpe.
@@ -206,27 +266,51 @@ static bool fingerIn(float fx0, float fx1, float fy0, float fy1) {
     for (auto& t : g_t) if (t.on && t.cx >= fx0 * W && t.cx < fx1 * W && t.cy >= fy0 * H && t.cy < fy1 * H) return true;
     return false;
 }
-static void drawKey(int x, int y, int w, int h, const char* label, bool on, int sc) {
-    color(on ? 0.96f : 0.30f, on ? 0.72f : 0.30f, on ? 0.f : 0.34f);   rectTL(x, y, w, h);
-    color(on ? 0.96f : 0.09f, on ? 0.72f : 0.09f, on ? 0.f : 0.11f);   rectTL(x + sc, y + sc, w - 2 * sc, h - 2 * sc);
-    if (on) color(0.05f, 0.05f, 0.05f); else color(0.93f, 0.93f, 0.93f);
-    text(label, x + (w - textW(label, sc)) / 2, y + (h - FONT_H * sc) / 2, sc);
-}
 static void drawKeys(int sc) {
     int key = 18 * sc, gap = 2 * sc, x0 = 3 * sc, y0 = 32 * sc;
+    int wide = (3 * key + 2 * gap - gap) / 2, bh = 20 * sc, ry = y0 + 2 * (key + gap);
     bool w = fingerIn(0.090f, 0.166f, 0.52f, 0.69f);
     bool a = fingerIn(0.015f, 0.088f, 0.69f, 0.85f);
     bool s = fingerIn(0.090f, 0.166f, 0.855f, 1.0f);
     bool d = fingerIn(0.168f, 0.245f, 0.69f, 0.85f);
     bool j = fingerIn(0.090f, 0.166f, 0.69f, 0.85f);
     bool atk = nowMs() - g_lastTap < 120;
-    drawKey(x0 + key + gap, y0, key, key, "W", w, sc);
-    drawKey(x0, y0 + key + gap, key, key, "A", a, sc);
-    drawKey(x0 + key + gap, y0 + key + gap, key, key, "S", s, sc);
-    drawKey(x0 + 2 * (key + gap), y0 + key + gap, key, key, "D", d, sc);
-    int wide = (3 * key + 2 * gap - gap) / 2, ry = y0 + 2 * (key + gap);
-    drawKey(x0, ry, wide, 14 * sc, "ATK", atk, sc);
-    drawKey(x0 + wide + gap, ry, wide, 14 * sc, "JUMP", j, sc);
+    struct K { int x, y, w, h; const char* t; bool on; };
+    K ks[] = {
+        {x0 + key + gap, y0, key, key, "W", w},
+        {x0, y0 + key + gap, key, key, "A", a},
+        {x0 + key + gap, y0 + key + gap, key, key, "S", s},
+        {x0 + 2 * (key + gap), y0 + key + gap, key, key, "D", d},
+        {x0, ry, wide, bh, "LMB", atk},
+        {x0 + wide + gap, ry, wide, bh, "JUMP", j},
+    };
+    // fondos translucidos (se ve el juego detras)
+    if (initQuad()) {
+        QuadState q; quadBegin(q);
+        for (auto& k : ks) {
+            if (k.on) quad(k.x, k.y, k.w, k.h, 0.96f, 0.72f, 0.f, 0.80f);
+            else      quad(k.x, k.y, k.w, k.h, 0.10f, 0.10f, 0.12f, 0.50f);
+        }
+        quadEnd(q);
+    } else {                                                  // sin shader: version opaca
+        for (auto& k : ks) { color(k.on ? 0.96f : 0.14f, k.on ? 0.72f : 0.14f, k.on ? 0.f : 0.16f); rectTL(k.x, k.y, k.w, k.h); }
+    }
+    // letras encima
+    for (int i = 0; i < 4; i++) {
+        auto& k = ks[i];
+        if (k.on) color(0.05f, 0.05f, 0.05f); else color(0.95f, 0.95f, 0.95f);
+        text(k.t, k.x + (k.w - textW(k.t, sc)) / 2, k.y + (k.h - FONT_H * sc) / 2, sc);
+    }
+    int big = std::max(1, sc * 3 / 4), small = std::max(1, sc / 2);
+    char cps[16]; snprintf(cps, sizeof(cps), "%d CPS", computeCps());
+    for (int i = 4; i < 6; i++) {
+        auto& k = ks[i];
+        if (k.on) color(0.05f, 0.05f, 0.05f); else color(0.95f, 0.95f, 0.95f);
+        int th = FONT_H * big + (i == 4 ? FONT_H * small + sc / 2 : 0);
+        int ty = k.y + (k.h - th) / 2;
+        text(k.t, k.x + (k.w - textW(k.t, big)) / 2, ty, big);
+        if (i == 4) text(cps, k.x + (k.w - textW(cps, small)) / 2, ty + FONT_H * big + sc / 2, small);
+    }
 }
 
 static void drawButton(const Lay& l) {
