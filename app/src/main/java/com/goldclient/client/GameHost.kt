@@ -39,18 +39,43 @@ object GameHost {
     fun guestStage(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_stage", false)
     fun setGuestStage(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_stage", on).apply()
 
-    /** Prueba: añade unos bytes al final de la copia de libminecraftpe.so (no afectan al programa) para ver si el emulador la acepta modificada. */
+    /** Prueba: cambia 16 bytes de una zona sin uso de la copia de libminecraftpe.so, SIN cambiar su tamano, para ver si el emulador la acepta modificada. */
     fun guestPatch(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_patch", false)
     fun setGuestPatch(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_patch", on).apply()
 
-    private const val MARK = "GOLD-PATCH-TEST\n"
+    private const val MARK = "GOLD-PATCH-TEST\n"   // 16 bytes
+
+    /** Posicion de una zona que no se carga al ejecutar (la seccion .comment u otra sin ALLOC) para un parche de IGUAL tamano, o -1. */
+    private fun safeOffset(so: File): Long {
+        try {
+            java.io.RandomAccessFile(so, "r").use { f ->
+                val hdr = ByteArray(0x34); f.readFully(hdr)
+                if (hdr[0].toInt() != 0x7f || hdr[1].toInt() != 'E'.code) return -1
+                val h = java.nio.ByteBuffer.wrap(hdr).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                val shoff = h.getInt(0x20).toLong() and 0xffffffffL
+                val shent = h.getShort(0x2E).toInt() and 0xffff
+                val shnum = h.getShort(0x30).toInt() and 0xffff
+                for (i in 0 until shnum) {
+                    f.seek(shoff + i.toLong() * shent)
+                    val sh = ByteArray(40); f.readFully(sh)
+                    val b = java.nio.ByteBuffer.wrap(sh).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    val type = b.getInt(4); val flags = b.getInt(8)
+                    val off = b.getInt(16).toLong() and 0xffffffffL; val size = b.getInt(20).toLong() and 0xffffffffL
+                    if (type == 1 && (flags and 2) == 0 && size >= 16) return off
+                }
+            }
+        } catch (_: Exception) {}
+        return -1
+    }
+
     fun isPatched(ctx: Context): Boolean {
         val so = File(File(ctx.filesDir, "jogo32"), "libminecraftpe.so")
-        val m = MARK.toByteArray()
-        if (!so.exists() || so.length() < m.size) return false
+        if (!so.exists()) return false
+        val off = safeOffset(so)
+        if (off < 0) return false
         return try {
             java.io.RandomAccessFile(so, "r").use { f ->
-                f.seek(so.length() - m.size); val b = ByteArray(m.size); f.readFully(b); b.contentEquals(m)
+                f.seek(off); val b = ByteArray(16); f.readFully(b); b.contentEquals(MARK.toByteArray())
             }
         } catch (_: Exception) { false }
     }
@@ -78,9 +103,10 @@ object GameHost {
         val patched = isPatched(ctx)
         try {
             if (guestPatch(ctx) && !patched) {
-                FileOutputStream(so, true).use { it.write(MARK.toByteArray()) }
+                val off = safeOffset(so)
+                if (off >= 0) java.io.RandomAccessFile(so, "rw").use { it.seek(off); it.write(MARK.toByteArray()) }
             } else if (!guestPatch(ctx) && patched) {
-                java.io.RandomAccessFile(so, "rw").use { it.setLength(so.length() - MARK.toByteArray().size) }
+                so.delete(); File(dir, "libminecraftpe.so.crc").delete()      // el emulador la vuelve a extraer limpia
             }
         } catch (_: Exception) {}
     }
