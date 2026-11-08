@@ -323,7 +323,14 @@ class MainActivity : AppCompatActivity() {
         }, lp(-2, -2, 0f, dp(3)))
         v.addView(topBar(right))
         v.addView(titleRow("Log", null))
-        v.addView(tests, lp(-2, -2).apply { bottomMargin = dp(8) })
+        tests.addView(glassChip("Probar parche") {
+            GameHost.setGuestStage(this, true); GameHost.setGuestPatch(this, true)
+            toast("Parche de prueba: abriendo el juego...")
+            launchSequence()
+        }, lp(-2, -2, 0f, dp(3)))
+        v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tests) },
+            lp(-1, -2).apply { bottomMargin = dp(6) })
+        v.addView(ptv(GameHost.status(this), 20f * ds, Color.parseColor("#C9C9D2")).apply { setPadding(dp(2), 0, 0, dp(8)) })
         val box = vbox().apply { background = panel(); setPadding(dp(12), dp(12), dp(12), dp(12)) }
         box.addView(t)
         v.addView(ScrollView(this).apply { addView(box) }, lp(-1, 0, 1f))

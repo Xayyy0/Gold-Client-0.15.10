@@ -55,6 +55,16 @@ object GameHost {
         } catch (_: Exception) { false }
     }
 
+    /** Resumen legible del estado de la prueba (se muestra en la pantalla Log). */
+    fun status(ctx: Context): String {
+        val dir = File(ctx.filesDir, "jogo32")
+        val so = File(dir, "libminecraftpe.so")
+        if (!guestStage(ctx)) return "jogo32 apagado"
+        if (!so.exists()) return "jogo32 ON · aun no hay libreria extraida: abre el juego una vez"
+        val crc = File(dir, "libminecraftpe.so.crc").exists()
+        return "jogo32 ON · libminecraftpe.so=${so.length()} bytes · crc=${if (crc) "si" else "no"} · parche pedido=${guestPatch(ctx)} · aplicado=${isPatched(ctx)}"
+    }
+
     /**
      * El emulador extrae el juego de 32 bits del APK a <filesDir>/jogo32 por su cuenta y deja un .crc junto a cada libreria;
      * si falta el .crc, vuelve a extraer y pisa lo que haya. Por eso aqui NO copiamos nada: esperamos a que exista el .crc
