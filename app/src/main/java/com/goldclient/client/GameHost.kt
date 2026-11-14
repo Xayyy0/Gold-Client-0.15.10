@@ -39,46 +39,17 @@ object GameHost {
     fun guestStage(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_stage", false)
     fun setGuestStage(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_stage", on).apply()
 
-    /** Prueba: cambia 16 bytes de una zona sin uso de la copia de libminecraftpe.so, SIN cambiar su tamano, para ver si el emulador la acepta modificada. */
+    /** "gold32": instala libgold32.so (32 bits) en el hueco libgnustl_unwind.so de la carpeta privada jogo32 para que el emulador la cargue dentro del juego. */
     fun guestPatch(ctx: Context) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).getBoolean("guest_patch", false)
     fun setGuestPatch(ctx: Context, on: Boolean) = ctx.getSharedPreferences("gold_host", Context.MODE_PRIVATE).edit().putBoolean("guest_patch", on).apply()
 
-    private const val MARK = "GOLD-PATCH-TEST\n"   // 16 bytes
+    private fun payloadFile(ctx: Context) = File(File(ctx.filesDir, "jogo32"), "libgnustl_unwind.so")
+    fun isPatched(ctx: Context) = payloadFile(ctx).exists()
 
-    /** Posicion de una zona que no se carga al ejecutar (la seccion .comment u otra sin ALLOC) para un parche de IGUAL tamano, o -1. */
-    private fun safeOffset(so: File): Long {
-        try {
-            java.io.RandomAccessFile(so, "r").use { f ->
-                val hdr = ByteArray(0x34); f.readFully(hdr)
-                if (hdr[0].toInt() != 0x7f || hdr[1].toInt() != 'E'.code) return -1
-                val h = java.nio.ByteBuffer.wrap(hdr).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                val shoff = h.getInt(0x20).toLong() and 0xffffffffL
-                val shent = h.getShort(0x2E).toInt() and 0xffff
-                val shnum = h.getShort(0x30).toInt() and 0xffff
-                for (i in 0 until shnum) {
-                    f.seek(shoff + i.toLong() * shent)
-                    val sh = ByteArray(40); f.readFully(sh)
-                    val b = java.nio.ByteBuffer.wrap(sh).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                    val type = b.getInt(4); val flags = b.getInt(8)
-                    val off = b.getInt(16).toLong() and 0xffffffffL; val size = b.getInt(20).toLong() and 0xffffffffL
-                    if (type == 1 && (flags and 2) == 0 && size >= 16) return off
-                }
-            }
-        } catch (_: Exception) {}
-        return -1
-    }
-
-    fun isPatched(ctx: Context): Boolean {
-        val so = File(File(ctx.filesDir, "jogo32"), "libminecraftpe.so")
-        if (!so.exists()) return false
-        val off = safeOffset(so)
-        if (off < 0) return false
-        return try {
-            java.io.RandomAccessFile(so, "r").use { f ->
-                f.seek(off); val b = ByteArray(16); f.readFully(b); b.contentEquals(MARK.toByteArray())
-            }
-        } catch (_: Exception) { false }
-    }
+    /** Lee libgold32.so (armeabi-v7a) del propio APK del launcher. */
+    private fun payloadBytes(ctx: Context): ByteArray? = try {
+        ZipFile(ctx.applicationInfo.sourceDir).use { z -> z.getEntry("lib/armeabi-v7a/libgold32.so")?.let { e -> z.getInputStream(e).use { it.readBytes() } } }
+    } catch (_: Exception) { null }
 
     /** Resumen legible del estado de la prueba (se muestra en la pantalla Log). */
     fun status(ctx: Context): String {
@@ -87,7 +58,7 @@ object GameHost {
         if (!guestStage(ctx)) return "jogo32 apagado"
         if (!so.exists()) return "jogo32 ON · aun no hay libreria extraida: abre el juego una vez"
         val crc = File(dir, "libminecraftpe.so.crc").exists()
-        return "jogo32 ON · libminecraftpe.so=${so.length()} bytes · crc=${if (crc) "si" else "no"} · parche pedido=${guestPatch(ctx)} · aplicado=${isPatched(ctx)}"
+        return "jogo32 ON · libminecraftpe.so=${so.length()} bytes · crc=${if (crc) "si" else "no"} · gold32 pedido=${guestPatch(ctx)} · instalado=${isPatched(ctx)} · carga util en el APK=${payloadBytes(ctx)?.size ?: "NO"}"
     }
 
     /**
@@ -99,15 +70,13 @@ object GameHost {
         val dir = File(ctx.filesDir, "jogo32")
         if (!guestStage(ctx)) { if (dir.exists()) dir.deleteRecursively(); return }
         val so = File(dir, "libminecraftpe.so")
-        if (!so.exists() || !File(dir, "libminecraftpe.so.crc").exists()) return
-        val patched = isPatched(ctx)
+        if (!so.exists() || !File(dir, "libminecraftpe.so.crc").exists()) return   // espera al primer arranque (el emulador crea sus archivos)
+        val f = payloadFile(ctx)
         try {
-            if (guestPatch(ctx) && !patched) {
-                val off = safeOffset(so)
-                if (off >= 0) java.io.RandomAccessFile(so, "rw").use { it.seek(off); it.write(MARK.toByteArray()) }
-            } else if (!guestPatch(ctx) && patched) {
-                so.delete(); File(dir, "libminecraftpe.so.crc").delete()      // el emulador la vuelve a extraer limpia
-            }
+            if (guestPatch(ctx)) {
+                val bytes = payloadBytes(ctx) ?: return
+                if (!f.exists() || f.length() != bytes.size.toLong()) { f.delete(); f.writeBytes(bytes) }
+            } else if (f.exists()) f.delete()
         } catch (_: Exception) {}
     }
 

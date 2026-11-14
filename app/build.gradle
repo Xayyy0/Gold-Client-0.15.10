@@ -10,10 +10,10 @@ android {
         applicationId "com.goldclient.client"
         minSdk 24
         targetSdk 29   // acceso clasico a almacenamiento; sin restricciones de carga de codigo de Android 14
-        versionCode 26
-        versionName "1.0-host26"
+        versionCode 29
+        versionName "1.0-host29"
         // El juego (libemu32) solo existe en arm64-v8a, asi que el launcher tambien.
-        ndk { abiFilters 'arm64-v8a' }
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }   // arm64: el launcher; armeabi-v7a: libgold32 (carga util para el juego)
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
     }
     externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }

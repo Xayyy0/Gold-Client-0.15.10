@@ -316,16 +316,16 @@ class MainActivity : AppCompatActivity() {
             toast("jogo32 " + (if (GameHost.guestStage(this)) "ON" else "OFF") + ": se aplica al pulsar LAUNCH")
             showLog()
         }, lp(-2, -2, 0f, dp(3)))
-        tests.addView(glassChip("parche: ${if (GameHost.guestPatch(this)) "ON" else "OFF"}", GameHost.guestPatch(this)) {
+        tests.addView(glassChip("gold32: ${if (GameHost.guestPatch(this)) "ON" else "OFF"}", GameHost.guestPatch(this)) {
             GameHost.setGuestPatch(this, !GameHost.guestPatch(this))
-            toast("parche " + (if (GameHost.guestPatch(this)) "ON" else "OFF") + ": solo actua con jogo32 ON")
+            toast("gold32 " + (if (GameHost.guestPatch(this)) "ON" else "OFF") + ": solo actua con jogo32 ON")
             showLog()
         }, lp(-2, -2, 0f, dp(3)))
         v.addView(topBar(right))
         v.addView(titleRow("Log", null))
-        tests.addView(glassChip("Probar parche") {
+        tests.addView(glassChip("Probar gold32") {
             GameHost.setGuestStage(this, true); GameHost.setGuestPatch(this, true)
-            toast("Parche de prueba: abriendo el juego...")
+            toast("Cargando libgold32 en el juego...")
             launchSequence()
         }, lp(-2, -2, 0f, dp(3)))
         v.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tests) },
@@ -338,7 +338,10 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             val raw = try { Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "GCORE:V", "AndroidRuntime:E", "DEBUG:V", "libc:F")).inputStream.bufferedReader().readText() }
                       catch (e: Exception) { "No pude leer el log: ${e.message}" }
-            val out = raw.lines().filter { it.isNotBlank() && !it.startsWith("---") }.takeLast(220).joinToString("\n")
+            // solo lo que sirve para diagnosticar (menos texto = menos tokens al pegarlo en el chat)
+            val keep = listOf("GOLD32", "jogo32", "calibracion", "libemu32", "dentro de un mundo", "fuera del mundo", "primer eglSwapBuffers",
+                "shader", "ERROR", "FATAL", "Exception", "AndroidRuntime", "[emu", "libgcore", "gold32")
+            val out = raw.lines().filter { l -> l.isNotBlank() && keep.any { l.contains(it) } }.takeLast(60).joinToString("\n")
             runOnUiThread { t.text = if (out.isBlank()) "(sin lineas GCORE: el juego no llego a abrir)" else out }
         }
     }

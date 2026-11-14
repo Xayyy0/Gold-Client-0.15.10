@@ -45,8 +45,8 @@ class GameActivity : NativeActivity() {
         val g = java.io.File(filesDir, "jogo32")
         fun sizes() = g.listFiles()?.sortedBy { it.name }?.joinToString { "${it.name}=${it.length()}" } ?: "no existe"
         val apkSize = try { java.util.zip.ZipFile(mcApk ?: "").use { it.getEntry("assets/jogo32/libminecraftpe.so")?.size } } catch (e: Exception) { null }
-        Log.i("GCORE", "libminecraftpe.so en el APK=$apkSize · jogo32 al abrir: ${sizes()} · parche=${GameHost.guestPatch(this)} aplicado=${GameHost.isPatched(this)}")
-        Handler(Looper.getMainLooper()).postDelayed({ Log.i("GCORE", "jogo32 a los 8 s: ${sizes()} aplicado=${GameHost.isPatched(this)}") }, 8000)
+        Log.i("GCORE", "libminecraftpe.so en el APK=$apkSize · jogo32 al abrir: ${sizes()} · parche=${GameHost.guestPatch(this)} gold32=${GameHost.isPatched(this)}")
+        Handler(Looper.getMainLooper()).postDelayed({ Log.i("GCORE", "jogo32 a los 8 s: ${sizes()} gold32=${GameHost.isPatched(this)}") }, 8000)
         super.onCreate(savedInstanceState)
     }
 

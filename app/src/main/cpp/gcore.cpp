@@ -508,7 +508,7 @@ static void updateWorldState() {
     if (!g_inWorld && up >= 15) { g_inWorld = true; LOGI("dentro de un mundo (draws=%d profundidad=%d)", tot, dd); }
     else if (g_inWorld && down >= 30) { g_inWorld = false; LOGI("fuera del mundo (draws=%d profundidad=%d)", tot, dd); }
     int64_t now = nowMs();
-    if (now - lastLog > 4000) { lastLog = now; LOGI("calibracion: draws=%d profundidad=%d enMundo=%d", tot, dd, (int)g_inWorld.load()); }
+    if (now - lastLog > 20000) { lastLog = now; LOGI("calibracion: draws=%d profundidad=%d enMundo=%d", tot, dd, (int)g_inWorld.load()); }
 }
 
 // ======================= Hooks EGL =======================
@@ -528,7 +528,7 @@ static EGLBoolean h_swapBuffers(EGLDisplay d, EGLSurface s) {
     float dt = std::chrono::duration<float>(clk::now() - t0).count();
     if (dt >= 0.5f) {
         g_fps = frames / dt; frames = 0; t0 = clk::now();
-        if (++logTick % 4 == 0) LOGI("FPS %.1f", g_fps.load());
+        if (++logTick % 20 == 0) LOGI("FPS %.1f", g_fps.load());
     }
     updateWorldState();
     drawAll(d, s);
@@ -560,8 +560,8 @@ static void redirectStdio() {
 static std::atomic<int> g_pathLogs{0};
 static void logPath(const char* kind, const char* path, bool ok) {
     if (!path) return;
-    if (!strncmp(path, "/proc/", 6) || !strncmp(path, "/sys/", 5) || !strncmp(path, "/dev/", 5)) return;
-    if (g_pathLogs++ < 150) LOGI("%s %s -> %s", kind, path, ok ? "ok" : "FALLO");
+    if (!strstr(path, "jogo32") && !strstr(path, ".so") && !strstr(path, "custom.png") && !strstr(path, "emu32")) return;
+    if (g_pathLogs++ < 40) LOGI("%s %s -> %s", kind, path, ok ? "ok" : "FALLO");
 }
 static AAsset* (*o_assetOpen)(AAssetManager*, const char*, int) = nullptr;
 static AAsset* h_assetOpen(AAssetManager* m, const char* f, int mode) { AAsset* r = o_assetOpen(m, f, mode); logPath("asset", f, r != nullptr); return r; }
